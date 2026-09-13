@@ -2,17 +2,21 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import {
   UNAUTHORIZED_EVENT,
   clearSession,
+  fetchMe,
   getToken,
-  getUsername,
   loginUser,
   registerUser,
   setSession,
+  type UserProfile,
 } from "./api";
 
 interface AuthContextValue {
   token: string | null;
+  user: UserProfile | null;
   username: string | null;
   isAuthenticated: boolean;
+  /** True while the stored token is being validated against GET /auth/me. */
+  isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
   logout: () => void;
@@ -24,19 +28,51 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(() => getToken());
-  const [username, setUsername] = useState<string | null>(() => getUsername());
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(() => getToken() != null);
 
   const logout = useCallback(() => {
     clearSession();
     setToken(null);
-    setUsername(null);
+    setUser(null);
+    setIsLoading(false);
   }, []);
+
+  // Server is the source of truth for login state: whenever we hold a token,
+  // validate it against GET /auth/me. No token -> logged out.
+  useEffect(() => {
+    if (!token) {
+      setUser(null);
+      setIsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setIsLoading(true);
+    fetchMe()
+      .then((profile) => {
+        if (!cancelled) setUser(profile);
+      })
+      .catch(() => {
+        // fetchMe already clears the session + fires UNAUTHORIZED_EVENT on 401.
+        if (!cancelled) {
+          setToken(getToken());
+          setUser(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   // Auto-logout when apiFetch sees a 401 (expired/invalid token).
   useEffect(() => {
     const onUnauthorized = () => {
       setToken(null);
-      setUsername(null);
+      setUser(null);
+      setIsLoading(false);
     };
     window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
     return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized);
@@ -46,7 +82,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const data = await loginUser(name, password);
     setSession(data.access_token, name);
     setToken(data.access_token);
-    setUsername(name);
+    // Populate the profile right away so callers don't wait for the effect.
+    // If it fails the validation effect above will clean up.
+    try {
+      const profile = await fetchMe();
+      setUser(profile);
+    } catch {
+      // Let the token effect handle session cleanup on real failures.
+    }
   }, []);
 
   const register = useCallback(async (name: string, password: string) => {
@@ -55,7 +98,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const data = await loginUser(name, password);
     setSession(data.access_token, name);
     setToken(data.access_token);
-    setUsername(name);
+    try {
+      const profile = await fetchMe();
+      setUser(profile);
+    } catch {
+      // Let the token effect handle session cleanup on real failures.
+    }
   }, []);
 
   const authHeader = useCallback((): Record<string, string> => {
@@ -66,14 +114,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       token,
-      username,
-      isAuthenticated: token != null,
+      user,
+      username: user?.username ?? null,
+      isAuthenticated: user != null,
+      isLoading,
       login,
       register,
       logout,
       authHeader,
     }),
-    [token, username, login, register, logout, authHeader],
+    [token, user, isLoading, login, register, logout, authHeader],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -95,6 +95,11 @@ export interface TokenResponse {
   token_type: string;
 }
 
+export interface UserProfile {
+  id: number;
+  username: string;
+}
+
 export interface Todo {
   id: number;
   task: string;
@@ -152,6 +157,11 @@ export async function loginUser(username: string, password: string): Promise<Tok
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form,
   });
+}
+
+/** Current user profile. Requires a valid Bearer token; 401 means logged out. */
+export async function fetchMe(): Promise<UserProfile> {
+  return apiFetch<UserProfile>("/auth/me");
 }
 
 // ---- Todo endpoints ----

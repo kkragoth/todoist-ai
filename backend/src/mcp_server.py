@@ -15,7 +15,7 @@ from fastmcp.dependencies import CurrentHeaders
 from auth.models import User
 from auth.utils.security import ALGORITHM, SECRET_KEY
 from core.database import SessionLocal
-from todo import models
+from todo import events, models
 
 mcp = FastMCP("Todoist AI MCP")
 
@@ -113,6 +113,7 @@ def add_todo(
         db.add(todo)
         db.commit()
         db.refresh(todo)
+        events.broadcast(user.id, {"type": "todos-changed", "action": "created", "id": todo.id})
         return f"Successfully added todo #{todo.id}: '{todo.task}' for {todo.todo_date}"
     finally:
         db.close()
@@ -162,6 +163,7 @@ def update_todo(
         db.commit()
         db.refresh(todo)
         mark = "✅" if todo.completed else "❌"
+        events.broadcast(user.id, {"type": "todos-changed", "action": "updated", "id": todo.id})
         return f"Updated Task #{todo.id}: • {mark} {todo.task} (ID: {todo.id}, {todo.todo_date})"
     finally:
         db.close()
@@ -193,6 +195,7 @@ def archive_todo(
         todo.archived = True
         db.commit()
         db.refresh(todo)
+        events.broadcast(user.id, {"type": "todos-changed", "action": "archived", "id": todo.id})
         return f"Archived Task #{todo.id} '{todo.task}'. It will no longer show up in listings."
     finally:
         db.close()
