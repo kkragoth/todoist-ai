@@ -8,15 +8,19 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi-mcp>=0.4.0",
     "fastapi[standard]>=0.141.1",
+    "fastmcp>=4.0.3",
     "jwt>=1.4.0",
     "passlib>=1.7.4",
     "sqlalchemy>=2.0.52",
     "uvicorn[standard]>=0.52.4",
 ]
 
-[project.scripts]
-backend = "backend:main"
+# [project.scripts]
+# backend = "backend:main"
+[tool.uv]
+package = false
 
 [build-system]
 requires = ["uv_build>=0.12.7,<0.13.0"]
