@@ -52,6 +52,7 @@ async def todo_events(user: User = Depends(get_query_user)):
     queue = events.subscribe(user.id)
 
     async def gen():
+        bridge = asyncio.create_task(events.redis_forward_loop(user.id, queue))
         try:
             yield ": connected\n\n"
             while True:
@@ -61,6 +62,7 @@ async def todo_events(user: User = Depends(get_query_user)):
                 except asyncio.TimeoutError:
                     yield ": ping\n\n"
         finally:
+            bridge.cancel()
             events.unsubscribe(user.id, queue)
 
     return StreamingResponse(
