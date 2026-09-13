@@ -1,0 +1,134 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  adminer:
+    image: adminer:5
+    restart: unless-stopped
+    profiles: ["debug"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    restart: unless-stopped
+    profiles: ["debug"]
+    depends_on:
+      redis:
+        condition: service_started
+    environment:
+      REDIS_HOSTS: "default:redis:6379:0"
+    ports:
+      - "8082:8081"
+
+  # Live-reload dev server: source is mounted, so edits apply instantly.
+  backend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["dev"]
+    working_dir: /app
+    env_file:
+      - ./.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      PORT: "8000"
+      PYTHONPATH: /app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./src:/app/src
+      - uv_cache:/root/.cache/uv
+    ports:
+      - "8000:8000"
+    stdin_open: true
+    tty: true
+    command: >
+      sh -lc "uv sync --locked --no-dev &&
+               uv run --no-sync python -c 'from core.database import ensure_schema; ensure_schema()' &&
+               exec uv run --no-sync uvicorn main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src"
+
+  # Production-shaped image (no mount, no reload).
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      PORT: "8000"
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles: ["tools"]
+    working_dir: /app
+    env_file:
+      - ./.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PYTHONPATH: /app/src
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["uv", "run", "--no-sync", "python", "-c", "from core.database import ensure_schema; ensure_schema()"]
+
+volumes:
+  postgres_data:
+  redis_data:
+  uv_cache:

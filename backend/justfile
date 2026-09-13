@@ -1,0 +1,86 @@
+set dotenv-load
+
+default:
+    @just --list
+
+# Full dev stack: postgres + redis + debug UIs (detached), rebuild the
+# backend image only when deps changed, migrate, then the reload-enabled
+# API in the foreground. API: http://localhost:8000
+dev:
+    docker compose -f docker-compose.yml --profile debug up -d --remove-orphans postgres redis adminer redis-commander
+    just _ensure-built
+    just db-migrate
+    @echo "API: http://localhost:8000"
+    @echo "Docs: http://localhost:8000/docs"
+    @echo "Health: http://localhost:8000/health"
+    @echo "Adminer: http://localhost:8081"
+    @echo "Redis Commander: http://localhost:8082"
+    docker compose -f docker-compose.yml --profile dev up --remove-orphans backend-dev
+
+# Same as `dev` but everything detached (returns immediately).
+dev-detached:
+    docker compose -f docker-compose.yml --profile debug up -d --remove-orphans postgres redis adminer redis-commander
+    just _ensure-built
+    just db-migrate
+    docker compose -f docker-compose.yml --profile dev up -d --remove-orphans backend-dev
+    @echo "API: http://localhost:8000/docs"
+
+# Rebuild backend images only when Dockerfile or deps changed (checked via
+# content hash stamp). `src/` edits don't need this: backend-dev mounts
+# ./src and uvicorn --reload picks them up live.
+_ensure-built:
+    #!/bin/sh
+    set -eu
+    cur="$(cat Dockerfile pyproject.toml uv.lock | shasum -a 256 | cut -d' ' -f1)"
+    prev=""; [ -f .dev-image-hash ] && prev="$(cat .dev-image-hash)"
+    if [ "$cur" != "$prev" ]; then
+      echo "Dockerfile/deps changed - rebuilding backend images..."
+      docker compose -f docker-compose.yml --profile dev --profile tools build backend-dev migrator
+      printf '%s' "$cur" > .dev-image-hash
+    else
+      echo "Backend image up to date, skipping build."
+    fi
+
+# Bare-metal API (no docker for python): needs postgres+redis up first.
+dev-local:
+    docker compose -f docker-compose.yml up -d postgres redis
+    just _wait-postgres
+    PYTHONPATH=src uv sync --locked
+    PYTHONPATH=src uv run --no-sync python -c "from core.database import ensure_schema; ensure_schema()"
+    PYTHONPATH=src uv run --no-sync uvicorn main:app --host 0.0.0.0 --port "${PORT:-8000}" --reload --reload-dir src
+
+infra-up:
+    docker compose -f docker-compose.yml --profile debug up -d postgres redis adminer redis-commander
+    @docker compose -f docker-compose.yml ps
+
+infra-down:
+    docker compose -f docker-compose.yml down
+
+# Run schema sync against the compose postgres (safe to re-run).
+db-migrate:
+    just _wait-postgres
+    docker compose -f docker-compose.yml --profile tools run --rm migrator
+
+_wait-postgres:
+    #!/bin/sh
+    set -eu
+    i=0; until docker compose -f docker-compose.yml exec -T postgres pg_isready -U "$POSTGRES_USER" >/dev/null 2>&1; do i=$((i+1)); [ $i -gt 30 ] && echo "postgres not ready" && exit 1; sleep 1; done
+
+logs:
+    docker compose -f docker-compose.yml logs -f
+
+ps:
+    docker compose -f docker-compose.yml ps
+
+# Prod-shaped stack (built image, no reload, no debug UIs).
+prod-up:
+    docker compose -f docker-compose.yml up -d --build postgres redis api
+    docker compose -f docker-compose.yml --profile tools run --rm migrator
+    @docker compose -f docker-compose.yml ps
+
+clean:
+    docker compose -f docker-compose.yml down -v
+    rm -rf .venv .dev-image-hash
+
+shell:
+    docker compose -f docker-compose.yml exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"

@@ -81,3 +81,6 @@ dmypy.json
 *.tmp
 *.bak
 *.orig
+
+# Local docker build stamp (see _ensure-built in justfile)
+.dev-image-hash
