@@ -1,12 +1,16 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+import asyncio
+import json
+
 from auth.models import User
-from auth.utils.security import get_current_user
+from auth.utils.security import get_current_user, get_query_user
 from core.database import get_db
-from . import schemas, models
+from . import events, schemas, models
 
 router = APIRouter(prefix="/api/todos", tags=["Todos"])
 
@@ -37,6 +41,38 @@ def get_todos(
         query = query.filter(models.Todo.archived == False)  # noqa: E712
     return query.all()
 
+@router.get("/events")
+async def todo_events(user: User = Depends(get_query_user)):
+    """SSE stream of todo changes for one user.
+
+    The token rides in the query string because browsers can't set headers
+    on an EventSource. get_query_user runs the same check as every other
+    endpoint, so a bad token gets the same 401.
+    """
+    queue = events.subscribe(user.id)
+
+    async def gen():
+        try:
+            yield ": connected\n\n"
+            while True:
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                    yield f"data: {json.dumps(event)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            events.unsubscribe(user.id, queue)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 @router.post("")
 def create_todo(
     todo: schemas.TodoCreate,
@@ -48,6 +84,7 @@ def create_todo(
     db.add(new_todo)
     db.commit()
     db.refresh(new_todo)
+    events.broadcast(current_user.id, {"type": "todos-changed", "action": "created", "id": new_todo.id})
     return new_todo
 
 @router.patch("/{todo_id}")
@@ -75,4 +112,5 @@ def update_todo(
 
     db.commit()
     db.refresh(todo)
+    events.broadcast(current_user.id, {"type": "todos-changed", "action": "updated", "id": todo.id})
     return todo

@@ -9,13 +9,16 @@ export const Route = createFileRoute("/register")({
 });
 
 function RegisterPage() {
-  const { isAuthenticated, register } = useAuth();
+  const { isAuthenticated, isLoading, register } = useAuth();
   const navigate = useNavigate();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
+  if (isLoading) {
+    return <p className="text-sm text-muted-foreground">Checking session…</p>;
+  }
   if (isAuthenticated) {
     return <Navigate to="/" />;
   }

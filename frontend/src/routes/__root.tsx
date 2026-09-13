@@ -9,7 +9,7 @@ export const Route = createRootRoute({
 });
 
 function RootLayout() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
   return (
     <div className="min-h-svh bg-background text-foreground">
@@ -20,7 +20,7 @@ function RootLayout() {
           </Link>
           <div className="flex items-center gap-1">
             <ThemeToggle />
-            {isAuthenticated ? (
+            {isLoading ? null : isAuthenticated ? (
               <UserMenu />
             ) : (
               <>

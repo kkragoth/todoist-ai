@@ -41,3 +41,11 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+def get_query_user(token: str, db: Session = Depends(get_db)):
+    """Same check as get_current_user, but the token comes from `?token=`.
+
+    Needed for SSE/EventSource clients, which can't set an Authorization
+    header. Reuses the header validation so both paths stay in sync.
+    """
+    return get_current_user(token=token, db=db)

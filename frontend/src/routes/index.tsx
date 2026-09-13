@@ -11,6 +11,7 @@ import {
   type Todo,
 } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { useTodosEvents } from "../lib/useTodosEvents";
 import { Button } from "../components/ui/button";
 
 export const Route = createFileRoute("/")({
@@ -24,8 +25,9 @@ function todayISO(): string {
 }
 
 function TodosPage() {
-  const { isAuthenticated, username } = useAuth();
+  const { isAuthenticated, isLoading, username } = useAuth();
   const queryClient = useQueryClient();
+  useTodosEvents(isAuthenticated);
 
   const [status, setStatus] = useState<StatusFilter>("all");
   const [showArchived, setShowArchived] = useState(false);
@@ -44,6 +46,7 @@ function TodosPage() {
         includeArchived: showArchived,
         targetDate: dateFilter || undefined,
       }),
+    enabled: isAuthenticated && !isLoading,
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["todos"] });
@@ -84,6 +87,7 @@ function TodosPage() {
   const todos = todosQuery.data ?? [];
   const openCount = todos.filter((t) => !t.completed && !t.archived).length;
 
+  if (isLoading) return <p className="text-sm text-muted-foreground">Checking session…</p>;
   if (!isAuthenticated) return <Navigate to="/login" />;
 
   return (
