@@ -1,0 +1,9 @@
+LC-TOOL: list_todos | schema props: ['completed', 'include_archived']
+LC-TOOL: add_todo | schema props: ['task', 'todo_date']
+LC-TOOL: update_todo | schema props: ['completed', 'task', 'todo_date', 'todo_id']
+LC-TOOL: archive_todo | schema props: ['todo_id']
+UPDATE: Updated Task #1: • ✅ probe task (ID: 1, 2026-09-13)
+ARCHIVE: Archived Task #1 'probe task'. It will no longer show up in listings.
+LIST: No tasks found.
+LIST-ARCH: • ✅ probe task (ID: 1, 2026-09-13)
+DONE
