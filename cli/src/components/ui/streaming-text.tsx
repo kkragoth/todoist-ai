@@ -1,7 +1,7 @@
 /* @jsxImportSource @opentui/react */
 import { useState, useEffect, useRef } from "react";
 
-import { useTheme } from "../../hooks/use-theme";
+import { useTheme } from "@/hooks/use-theme";
 
 export interface StreamingTextProps {
   text?: string;

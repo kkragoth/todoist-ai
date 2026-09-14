@@ -2,27 +2,14 @@
  * ChatMessage (user / assistant / system bubbles), StreamingText
  * (assistant answer), ThinkingBlock (per-turn tool summary) and
  * ToolCall (one row per tool invocation). */
-import type { FeedItem, ToolStep, Turn } from "../types.js";
-import { ChatMessage } from "./ui/chat-message.js";
-import { StreamingText } from "./ui/streaming-text.js";
-import { ThinkingBlock } from "./ui/thinking-block.js";
-import { ToolCall } from "./ui/tool-call.js";
-import type { ToolCallStatus } from "./ui/tool-call.js";
-
-function oneLine(text: string, max = 160): string {
-  return text.replace(/\s+/g, " ").trim().slice(0, max);
-}
-
-function toolSummary(tools: ToolStep[]): string {
-  if (tools.length === 0) return "Answered directly, no tools used.";
-  return tools
-    .map((t) => {
-      const ms = t.elapsedMs !== undefined ? ` (${(t.elapsedMs / 1000).toFixed(1)}s)` : "";
-      const out = t.output !== undefined ? ` → ${oneLine(t.output, 120)}` : " …";
-      return `• ${t.tool} ${oneLine(JSON.stringify(t.args), 120)}${out}${ms}`;
-    })
-    .join("\n");
-}
+import type { FeedItem, ToolStep, Turn } from "@/types.js";
+import { isWorkingTurn, turnPhaseLabel } from "@/lib/turn.js";
+import { toolSummary } from "@/lib/text.js";
+import { ChatMessage } from "@/components/ui/chat-message.js";
+import { StreamingText } from "@/components/ui/streaming-text.js";
+import { ThinkingBlock } from "@/components/ui/thinking-block.js";
+import { ToolCall } from "@/components/ui/tool-call.js";
+import type { ToolCallStatus } from "@/components/ui/tool-call.js";
 
 function stepStatus(step: ToolStep, working: boolean): ToolCallStatus {
   if (step.output !== undefined) return "success";
@@ -30,18 +17,11 @@ function stepStatus(step: ToolStep, working: boolean): ToolCallStatus {
 }
 
 export function TurnView({ turn, now }: { turn: Turn; now: number }) {
-  const working = turn.phase === "working";
+  const working = isWorkingTurn(turn);
   const showTools = working || turn.expanded;
   const duration =
     (turn.endedAt ?? now) - turn.startedAt;
-  const label =
-    turn.phase === "done"
-      ? `Thought · ${turn.tools.length} tool call${turn.tools.length === 1 ? "" : "s"}`
-      : turn.phase === "cancelled"
-        ? "Cancelled"
-        : turn.phase === "error"
-          ? "Failed"
-          : "Thinking";
+  const label = turnPhaseLabel(turn);
 
   return (
     <box flexDirection="column">

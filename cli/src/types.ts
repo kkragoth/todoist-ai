@@ -20,7 +20,12 @@ export interface ToolStep {
   startedAt: number;
 }
 
-export type TurnPhase = "working" | "done" | "error" | "cancelled";
+export enum TurnPhase {
+  Working = "working",
+  Done = "done",
+  Error = "error",
+  Cancelled = "cancelled",
+}
 
 export interface Turn {
   id: number;

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import { useTheme } from "../../hooks/use-theme";
+import { useTheme } from "@/hooks/use-theme";
 
 export type ChatRole = "user" | "assistant" | "system" | "error";
 

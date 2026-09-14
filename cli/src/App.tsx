@@ -13,24 +13,22 @@ import {
   apiMe,
   apiRegister,
   openChatTurn,
-} from "./api.js";
-import { clearToken, loadToken, saveTokenData } from "./auth-store.js";
-import { FeedView } from "./components/chat-message.js";
-import { Spinner } from "./components/ui/spinner.js";
-import type { CliOptions, FeedItem, Turn } from "./types.js";
-import { SLASH_COMMANDS } from "./types.js";
-
-let nextId = 1;
-
-/** Runtime passes the input string; the prop type also merges a DOM
- * SubmitEvent arm that never fires — coerce defensively. */
-function submittedText(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function isThreadId(text: string): boolean {
-  return /^\d+$/.test(text);
-}
+} from "@/api.js";
+import { clearToken, loadToken, saveTokenData } from "@/auth-store.js";
+import { FeedView } from "@/components/chat-message.js";
+import { Spinner } from "@/components/ui/spinner.js";
+import {
+  appendAnswer,
+  cancelTurn,
+  completeTurnIfWorking,
+  createTurn,
+  failTurn,
+  nextQueueId,
+  nextSystemId,
+} from "@/lib/turn.js";
+import { isThreadId, submittedText } from "@/lib/text.js";
+import type { CliOptions, FeedItem, Turn } from "@/types.js";
+import { SLASH_COMMANDS } from "@/types.js";
 
 interface AppProps {
   options: CliOptions;
@@ -69,7 +67,7 @@ export function App({ options }: AppProps) {
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function pushSystem(text: string) {
-    setFeed((prev) => [...prev, { kind: "system", id: nextId++, text }]);
+    setFeed((prev) => [...prev, { kind: "system", id: nextSystemId(), text }]);
   }
 
   function updateTurn(id: number, fn: (t: Turn) => Turn) {
@@ -159,16 +157,8 @@ export function App({ options }: AppProps) {
   async function startTurn(userText: string) {
     const activeToken = token;
     if (!activeToken) return;
-    const id = nextId++;
-    const turn: Turn = {
-      id,
-      userText,
-      answer: "",
-      phase: "working",
-      tools: [],
-      expanded: true,
-      startedAt: Date.now(),
-    };
+    const turn = createTurn(userText);
+    const id = turn.id;
     setFeed((prev) => [...prev, { kind: "turn", turn }]);
     setBusy(true);
     busyRef.current = true;
@@ -191,7 +181,7 @@ export function App({ options }: AppProps) {
         if (evt.type === "token") {
           sawContent = true;
           const chunk = evt.content;
-          updateTurn(id, (t) => ({ ...t, answer: t.answer + chunk }));
+          updateTurn(id, (t) => appendAnswer(t, chunk));
         } else if (evt.type === "tool_call") {
           const step = { tool: evt.tool, args: evt.args ?? {}, startedAt: Date.now() };
           updateTurn(id, (t) => ({ ...t, tools: [...t.tools, step] }));
@@ -210,15 +200,11 @@ export function App({ options }: AppProps) {
           });
           setStatus("Thinking…");
         } else if (evt.type === "error") {
-          updateTurn(id, (t) => ({ ...t, phase: "error", endedAt: Date.now(), expanded: false }));
+          updateTurn(id, failTurn);
           pushSystem(evt.message);
           setStatus("Turn failed.");
         } else if (evt.type === "done") {
-          updateTurn(id, (t) =>
-            t.phase === "working"
-              ? { ...t, phase: "done", endedAt: Date.now(), expanded: false }
-              : t,
-          );
+          updateTurn(id, completeTurnIfWorking);
           setStatus(queueRef.current.length > 0 ? "Sending queued message…" : "Ready.");
         }
       }
@@ -229,11 +215,11 @@ export function App({ options }: AppProps) {
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") {
-        updateTurn(id, (t) => ({ ...t, phase: "cancelled", endedAt: Date.now(), expanded: false }));
+        updateTurn(id, cancelTurn);
         pushSystem("Turn cancelled.");
         setStatus("Ready.");
       } else {
-        updateTurn(id, (t) => ({ ...t, phase: "error", endedAt: Date.now(), expanded: false }));
+        updateTurn(id, failTurn);
         pushSystem(`that turn failed (${e instanceof Error ? e.message : String(e)}). Try rephrasing.`);
         setStatus("Turn failed.");
       }
@@ -341,7 +327,7 @@ export function App({ options }: AppProps) {
       return;
     }
     if (busyRef.current) {
-      const id = nextId++;
+      const id = nextQueueId();
       queueRef.current = [...queueRef.current, { id, text }];
       setQueue(queueRef.current);
       setFeed((prev) => [...prev, { kind: "queued", id, text }]);

@@ -9,9 +9,10 @@
   },
   "scripts": {
     "dev": "NODE_OPTIONS=--experimental-ffi tsx src/main.tsx",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && tsc-alias -p tsconfig.json",
     "start": "NODE_OPTIONS=--experimental-ffi node dist/main.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint"
   },
   "dependencies": {
     "@opentui/core": "^0.5.11",
@@ -22,6 +23,8 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
+    "oxlint": "^1.82.0",
+    "tsc-alias": "^1.9.5",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"
   }

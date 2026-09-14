@@ -1,4 +1,4 @@
-import type { ChatEvent } from "./types.js";
+import type { ChatEvent } from "@/types.js";
 
 async function readJson(res: Response): Promise<unknown> {
   try {

@@ -1,5 +1,5 @@
 /* @jsxImportSource @opentui/react */
-import { useTheme } from "../../hooks/use-theme";
+import { useTheme } from "@/hooks/use-theme";
 
 export interface ThinkingBlockProps {
   content: string;

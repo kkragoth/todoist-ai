@@ -1,4 +1,4 @@
-import type { CliOptions } from "./types.js";
+import type { CliOptions } from "@/types.js";
 
 function pickFlag(argv: string[], name: string): string | undefined {
   const ix = argv.indexOf(name);

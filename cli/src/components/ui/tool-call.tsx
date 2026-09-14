@@ -1,7 +1,7 @@
 /* @jsxImportSource @opentui/react */
 import { useEffect, useRef, useState } from "react";
 
-import { useTheme } from "../../hooks/use-theme";
+import { useTheme } from "@/hooks/use-theme";
 
 export type ToolCallStatus = "pending" | "running" | "success" | "error";
 
