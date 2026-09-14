@@ -1,5 +1,5 @@
 /* @jsxImportSource @opentui/react */
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MouseButton, type MouseEvent } from "@opentui/core";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -28,9 +28,17 @@ export const ThinkingBlock = ({
 }: ThinkingBlockProps) => {
     const theme = useTheme();
     const collapsed = collapsedProp ?? (!streaming && true);
+    const [frame, setFrame] = useState(0);
     // Press position: only a release on the same cell counts as a click,
     // so starting a drag-selection on the header never toggles the block.
     const downPos = useRef<{ x: number; y: number } | null>(null);
+
+    const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    useEffect(() => {
+        if (!streaming) return;
+        const id = setInterval(() => setFrame((f) => f + 1), Math.round(1000 / 12));
+        return () => clearInterval(id);
+    }, [streaming]);
 
     const tokenStr = tokenCount === undefined ? null : `${tokenCount.toLocaleString()} tokens`;
     const durationStr = duration === undefined ? null : `${(duration / 1000).toFixed(1)}s`;
@@ -38,16 +46,13 @@ export const ThinkingBlock = ({
     const headerParts = [streaming ? "Thinking..." : label, tokenStr, durationStr].filter(Boolean);
 
     const headerText = headerParts.join(" · ");
+    const orange = theme.colors.warning ?? "#F59E0B";
+    const lines = content.split("\n");
 
     return (
-        <box
-            flexDirection="column"
-            borderStyle="single"
-            borderColor={theme.colors.border}
-            paddingLeft={1}
-            paddingRight={1}
-        >
+        <box flexDirection="column">
             <box
+                flexDirection="row"
                 gap={1}
                 onMouseDown={
                     onToggle
@@ -67,13 +72,18 @@ export const ThinkingBlock = ({
                         : undefined
                 }
             >
-                <text fg={theme.colors.mutedForeground}>{collapsed ? "▶" : "▼"}</text>
-                <text fg={streaming ? theme.colors.primary : theme.colors.mutedForeground}>{headerText}</text>
+                <text fg={orange}>{collapsed ? "▶" : "▼"}</text>
+                {streaming && <text fg={orange}>{spinnerFrames[frame % spinnerFrames.length]}</text>}
+                <text fg={orange}>{headerText}</text>
             </box>
 
-            {!collapsed && (
-                <box flexDirection="column" paddingTop={1}>
-                    <text fg={theme.colors.mutedForeground}>{content}</text>
+            {collapsed || (
+                <box flexDirection="column">
+                    {lines.map((line, i) => (
+                        <text key={i} fg={theme.colors.mutedForeground}>
+                            {line}
+                        </text>
+                    ))}
                 </box>
             )}
         </box>

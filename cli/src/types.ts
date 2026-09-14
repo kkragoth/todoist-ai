@@ -9,6 +9,7 @@ export type ChatEvent =
     | { type: "token"; content: string }
     | { type: "tool_call"; tool: string; args: Record<string, unknown> }
     | { type: "tool_result"; tool: string; output: string }
+    | { type: "ask_user"; question: string; options?: string[] }
     | { type: "done" }
     | { type: "error"; message: string };
 
@@ -33,10 +34,17 @@ export interface Turn {
     answer: string;
     phase: TurnPhase;
     tools: ToolStep[];
+    /** Clarifying question the model asked instead of acting; reply continues the thread. */
+    clarification?: Clarification;
     /** Thinking detail lines visible (auto-on while working, auto-off when done). */
     expanded: boolean;
     startedAt: number;
     endedAt?: number;
+}
+
+export interface Clarification {
+    question: string;
+    options: string[];
 }
 
 export type FeedItem =

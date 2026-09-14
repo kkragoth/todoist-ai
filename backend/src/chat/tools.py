@@ -50,6 +50,19 @@ class ArchiveTodoArgs(BaseModel):
     todo_id: int = Field(description="The ID of the task to archive.")
 
 
+class AskUserArgs(BaseModel):
+    question: str = Field(
+        min_length=1,
+        max_length=300,
+        description="Short clarification question for the user. Ask alone, no other tools in the same turn.",
+    )
+    options: list[str] = Field(
+        default_factory=list,
+        max_length=4,
+        description="Up to 4 short options, each naming task + date + ID so the reply resolves to one candidate.",
+    )
+
+
 def drop_nones(kwargs: dict) -> dict:
     return {k: v for k, v in kwargs.items() if v is not None}
 
@@ -92,6 +105,15 @@ def build_tools_for_user(user_id: int) -> list[StructuredTool]:
             todo_service.archive_todo, user_id, todo_id=todo_id
         )
 
+    async def ask_user_tool(question: str, options: list[str] | None = None) -> str:
+        """Terminal clarification hook. The service intercepts this call,
+        emits an `ask_user` SSE event, and ends the turn — the returned
+        string only lands in history so the next turn remembers what was asked."""
+        opts = options or []
+        if opts:
+            return f"Asked user: {question} Options: {' | '.join(opts)}"
+        return f"Asked user: {question}"
+
     return [
         StructuredTool.from_function(
             coroutine=list_todos_tool,
@@ -127,5 +149,15 @@ def build_tools_for_user(user_id: int) -> list[StructuredTool]:
             name="archive_todo",
             description="Archive a todo task so it is hidden from normal listings.",
             args_schema=ArchiveTodoArgs,
+        ),
+        StructuredTool.from_function(
+            coroutine=ask_user_tool,
+            name="ask_user",
+            description=(
+                "Ask the user a clarifying question INSTEAD of acting. Use when "
+                "zero or 2+ tasks match, or a pronoun has no single clear target. "
+                "Terminal: call it alone, with no other tools in the same turn."
+            ),
+            args_schema=AskUserArgs,
         ),
     ]

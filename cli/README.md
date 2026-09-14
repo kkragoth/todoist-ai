@@ -49,7 +49,9 @@ validated against `GET /auth/me` on boot.
 ## Protocol (backend contract)
 
 - `POST /api/chat` `{message, thread_id, provider?, model?}` → SSE `data:` frames:
-  `token` / `tool_call` / `tool_result` / `done` / `error`
+  `token` / `tool_call` / `tool_result` / `ask_user` / `done` / `error`
+  (`ask_user` carries `{question, options[]}` and ends the turn; reply with an
+  option number or free text to continue the thread)
 - `DELETE /api/chat/history?thread_id=` clears the thread (`/clear`)
 - Auth: `POST /auth/token` (form), `POST /auth/register` (JSON), `GET /auth/me`
 

@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useTerminalDimensions } from "@opentui/react";
+import { ConnectionStatusBadge } from "@/components/connection-status.js";
 import { PasswordInput } from "@/components/ui/password-input.js";
+import { isDisconnected } from "@/lib/connection.js";
 import { useAuthStore } from "@/stores/auth-store.js";
 import { useSessionStore } from "@/stores/session-store.js";
 import { AuthFocus, AuthMode } from "@/types.js";
@@ -8,6 +10,7 @@ import { AuthFocus, AuthMode } from "@/types.js";
 /** Sign-in screen. Self-contained: reads the auth + session stores directly. */
 export function AuthScreen() {
     const apiUrl = useSessionStore((s) => s.apiUrl);
+    const connection = useSessionStore((s) => s.connection);
     const mode = useAuthStore((s) => s.mode);
     const focus = useAuthStore((s) => s.focus);
     const error = useAuthStore((s) => s.error);
@@ -35,6 +38,12 @@ export function AuthScreen() {
                         <span fg="gray"> — backend {apiUrl} · ←/→ switch tab · tab next field · enter submits</span>
                     </text>
                 </box>
+                <ConnectionStatusBadge />
+                {isDisconnected(connection) && (
+                    <text fg="red">
+                        Backend unreachable at {apiUrl} — start the server; retrying automatically, or submit to retry.
+                    </text>
+                )}
                 {error && <text fg="red">{error}</text>}
                 <tab-select
                     focused={focus === AuthFocus.Tabs}

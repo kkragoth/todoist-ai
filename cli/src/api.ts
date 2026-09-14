@@ -1,5 +1,26 @@
 import type { ChatEvent } from "@/types.js";
 
+/** Default ceiling for auth/me + health probes so a dead backend surfaces
+ * as NO CONNECTION instead of hanging the first paint. */
+export const BOOT_TIMEOUT_MS = 4000;
+export const AUTH_TIMEOUT_MS = 10000;
+
+function timeoutSignal(timeoutMs: number, outer?: AbortSignal): AbortSignal {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    if (outer) {
+        if (outer.aborted) ctrl.abort();
+        else outer.addEventListener("abort", () => ctrl.abort(), { once: true });
+    }
+    // Node releases the timer on abort paths via unref; clear defensively.
+    timer.unref?.();
+    return ctrl.signal;
+}
+
+function isTimeout(err: unknown): boolean {
+    return err instanceof DOMException && err.name === "AbortError";
+}
+
 async function readJson(res: Response): Promise<unknown> {
     try {
         return await res.json();
@@ -14,10 +35,24 @@ export function authHeaders(token: string): Record<string, string> {
 
 export type MeResult = { status: "ok"; username: string } | { status: "invalid" } | { status: "unreachable" };
 
-export async function apiMe(apiUrl: string, token: string): Promise<MeResult> {
+/** Lightweight reachability probe (GET /health) with a short timeout.
+ * Returns true only on a 2xx response — false on timeout / refused / 5xx. */
+export async function apiHealth(apiUrl: string, timeoutMs: number = BOOT_TIMEOUT_MS): Promise<boolean> {
+    try {
+        const res = await fetch(`${apiUrl}/health`, { signal: timeoutSignal(timeoutMs) });
+        return res.ok;
+    } catch {
+        return false;
+    }
+}
+
+export async function apiMe(apiUrl: string, token: string, timeoutMs: number = BOOT_TIMEOUT_MS): Promise<MeResult> {
     let res: Response;
     try {
-        res = await fetch(`${apiUrl}/auth/me`, { headers: authHeaders(token) });
+        res = await fetch(`${apiUrl}/auth/me`, {
+            headers: authHeaders(token),
+            signal: timeoutSignal(timeoutMs),
+        });
     } catch {
         return { status: "unreachable" };
     }
@@ -31,13 +66,25 @@ export async function apiMe(apiUrl: string, token: string): Promise<MeResult> {
     return { status: "invalid" };
 }
 
-export async function apiLogin(apiUrl: string, username: string, password: string): Promise<string> {
+export async function apiLogin(
+    apiUrl: string,
+    username: string,
+    password: string,
+    timeoutMs: number = AUTH_TIMEOUT_MS,
+): Promise<string> {
     const body = new URLSearchParams({ username, password });
-    const res = await fetch(`${apiUrl}/auth/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body,
-    });
+    let res: Response;
+    try {
+        res = await fetch(`${apiUrl}/auth/token`, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body,
+            signal: timeoutSignal(timeoutMs),
+        });
+    } catch (e) {
+        if (isTimeout(e)) throw new Error(`backend unreachable at ${apiUrl} (login timed out)`);
+        throw new Error(`backend unreachable at ${apiUrl} — is the server running?`);
+    }
     if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(`login failed (${res.status}): ${text.slice(0, 200)}`);
@@ -49,12 +96,24 @@ export async function apiLogin(apiUrl: string, username: string, password: strin
     return data.access_token;
 }
 
-export async function apiRegister(apiUrl: string, username: string, password: string): Promise<void> {
-    const res = await fetch(`${apiUrl}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-    });
+export async function apiRegister(
+    apiUrl: string,
+    username: string,
+    password: string,
+    timeoutMs: number = AUTH_TIMEOUT_MS,
+): Promise<void> {
+    let res: Response;
+    try {
+        res = await fetch(`${apiUrl}/auth/register`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, password }),
+            signal: timeoutSignal(timeoutMs),
+        });
+    } catch (e) {
+        if (isTimeout(e)) throw new Error(`backend unreachable at ${apiUrl} (register timed out)`);
+        throw new Error(`backend unreachable at ${apiUrl} — is the server running?`);
+    }
     if (!res.ok) {
         const text = await res.text().catch(() => "");
         throw new Error(`register failed (${res.status}): ${text.slice(0, 200)}`);
