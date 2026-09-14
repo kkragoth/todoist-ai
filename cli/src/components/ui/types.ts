@@ -3,92 +3,92 @@ import type { ReactNode } from "react";
 export type BorderStyle = "single" | "double" | "rounded" | "heavy";
 
 export interface ColorTokens {
-  primary: string;
-  primaryForeground: string;
-  secondary: string;
-  secondaryForeground: string;
-  accent: string;
-  accentForeground: string;
-  success: string;
-  successForeground: string;
-  warning: string;
-  warningForeground: string;
-  error: string;
-  errorForeground: string;
-  info: string;
-  infoForeground: string;
-  background: string;
-  foreground: string;
-  muted: string;
-  mutedForeground: string;
-  border: string;
-  focusRing: string;
-  selection: string;
-  selectionForeground: string;
+    primary: string;
+    primaryForeground: string;
+    secondary: string;
+    secondaryForeground: string;
+    accent: string;
+    accentForeground: string;
+    success: string;
+    successForeground: string;
+    warning: string;
+    warningForeground: string;
+    error: string;
+    errorForeground: string;
+    info: string;
+    infoForeground: string;
+    background: string;
+    foreground: string;
+    muted: string;
+    mutedForeground: string;
+    border: string;
+    focusRing: string;
+    selection: string;
+    selectionForeground: string;
 }
 
 export interface SpacingTokens {
-  0: number;
-  1: number;
-  2: number;
-  3: number;
-  4: number;
-  6: number;
-  8: number;
+    0: number;
+    1: number;
+    2: number;
+    3: number;
+    4: number;
+    6: number;
+    8: number;
 }
 
 export interface TypographyTokens {
-  bold: boolean;
-  sm: string;
-  base: string;
-  lg: string;
-  xl: string;
+    bold: boolean;
+    sm: string;
+    base: string;
+    lg: string;
+    xl: string;
 }
 
 export interface BorderTokens {
-  style: BorderStyle;
-  color: string;
-  focusColor: string;
+    style: BorderStyle;
+    color: string;
+    focusColor: string;
 }
 
 export interface Theme {
-  name: string;
-  colors: ColorTokens;
-  spacing: SpacingTokens;
-  typography: TypographyTokens;
-  border: BorderTokens;
+    name: string;
+    colors: ColorTokens;
+    spacing: SpacingTokens;
+    typography: TypographyTokens;
+    border: BorderTokens;
 }
 
 export interface MotionContextValue {
-  reduced: boolean;
+    reduced: boolean;
 }
 
 export interface UnicodeContextValue {
-  unicode: boolean;
+    unicode: boolean;
 }
 
 export interface ThemeContextValue {
-  setTheme: (theme: Theme) => void;
-  theme: Theme;
+    setTheme: (theme: Theme) => void;
+    theme: Theme;
 }
 
 export interface ThemeProviderProps {
-  children: ReactNode;
-  theme?: Theme;
+    children: ReactNode;
+    theme?: Theme;
 }
 
 export interface MotionProviderProps {
-  children: ReactNode;
-  reducedMotion?: boolean;
+    children: ReactNode;
+    reducedMotion?: boolean;
 }
 
 export interface UnicodeProviderProps {
-  children: ReactNode;
-  unicode?: boolean;
+    children: ReactNode;
+    unicode?: boolean;
 }
 
 export interface AutoThemeProviderProps {
-  children: ReactNode;
-  darkTheme: Theme;
-  lightTheme: Theme;
+    children: ReactNode;
+    darkTheme: Theme;
+    lightTheme: Theme;
 }
