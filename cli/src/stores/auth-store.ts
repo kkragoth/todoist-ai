@@ -27,7 +27,7 @@ let bootStarted = false;
 
 export const useAuthStore = create<AuthState>()((set, get) => ({
     mode: AuthMode.Login,
-    focus: AuthFocus.Tabs,
+    focus: AuthFocus.User,
     user: "",
     pass: "",
     error: "",
@@ -60,7 +60,7 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
             set({ busy: false });
         }
     },
-    reset: () => set({ mode: AuthMode.Login, focus: AuthFocus.Tabs, pass: "", error: "" }),
+    reset: () => set({ mode: AuthMode.Login, focus: AuthFocus.User, pass: "", error: "" }),
     boot: () => {
         if (bootStarted) return;
         bootStarted = true;

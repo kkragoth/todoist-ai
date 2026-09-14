@@ -5,6 +5,7 @@ import { handleSlashCommand } from "@/lib/slash-commands.js";
 import { submittedText } from "@/lib/text.js";
 import { useChatStore } from "@/stores/chat-store.js";
 import { useComposerStore } from "@/stores/composer-store.js";
+import { useSessionUiStore } from "@/stores/session-ui-store.js";
 import { useSessionStore } from "@/stores/session-store.js";
 
 /** Message input box + key-hint footer. The input ref is owned by App (the
@@ -12,6 +13,7 @@ import { useSessionStore } from "@/stores/session-store.js";
 export function MessageInput({ inputRef }: { inputRef: RefObject<InputRenderable | null> }) {
     const busy = useChatStore((s) => s.busy);
     const queue = useChatStore((s) => s.queue);
+    const paletteOpen = useSessionUiStore((s) => s.paletteOpen);
     const setDraft = useComposerStore((s) => s.setDraft);
 
     function handleSubmit(value: string) {
@@ -36,7 +38,7 @@ export function MessageInput({ inputRef }: { inputRef: RefObject<InputRenderable
                 <input
                     ref={inputRef}
                     placeholder="Ask about todos…"
-                    focused
+                    focused={!paletteOpen}
                     onInput={setDraft}
                     onSubmit={(v: unknown) => handleSubmit(submittedText(v))}
                 />

@@ -5,6 +5,7 @@ import { AuthScreen } from "@/components/auth-screen.js";
 import { CommandPopup } from "@/components/command-popup.js";
 import { HeaderBar } from "@/components/header-bar.js";
 import { MessageInput } from "@/components/message-input.js";
+import { SessionPalette } from "@/components/session-palette.js";
 import { StatusLine } from "@/components/status-line.js";
 import { Transcript } from "@/components/transcript.js";
 import { cancelTurnRequest, isTurnRunning } from "@/lib/chat-turn.js";
@@ -12,8 +13,9 @@ import { getSlashCompletions } from "@/lib/slash.js";
 import { useAuthStore } from "@/stores/auth-store.js";
 import { useChatStore } from "@/stores/chat-store.js";
 import { useComposerStore } from "@/stores/composer-store.js";
+import { useSessionUiStore } from "@/stores/session-ui-store.js";
 import { useSessionStore } from "@/stores/session-store.js";
-import { nextAuthFocus } from "@/types.js";
+import { nextAuthFocus, prevAuthFocus } from "@/types.js";
 
 /** Pure composition over stores. Screen sections are self-contained components
  * under src/components/; this file owns only the two TUI refs, global key
@@ -25,6 +27,9 @@ export function App() {
 
     const inputRef = useRef<InputRenderable>(null);
     const scrollRef = useRef<ScrollBoxRenderable>(null);
+    // Down position of a potential click; cleared on drag so drag-to-copy
+    // never steals focus back to the input.
+    const mouseDownPos = useRef<{ x: number; y: number; button: number } | null>(null);
 
     // Drag-to-select on any selectable message text copies via OSC52.
     useSelectionHandler((selection) => {
@@ -48,8 +53,13 @@ export function App() {
         if (!session.token) {
             if (key.name === "tab") {
                 const auth = useAuthStore.getState();
-                auth.setFocus(nextAuthFocus(auth.focus));
+                auth.setFocus(key.shift ? prevAuthFocus(auth.focus) : nextAuthFocus(auth.focus));
             }
+            return;
+        }
+        // The sessions palette owns the keyboard while open (it handles
+        // ↑↓/enter/esc itself) so global shortcuts don't double-fire.
+        if (useSessionUiStore.getState().paletteOpen) {
             return;
         }
         const matches = getSlashCompletions(composer.draft);
@@ -70,6 +80,12 @@ export function App() {
         if (key.name === "tab" && showPopup && activeMatch) {
             if (inputRef.current) inputRef.current.value = `${activeMatch.name} `;
             composer.acceptCompletion(activeMatch.name);
+            return;
+        }
+        if (key.name === "tab") {
+            inputRef.current?.focus();
+            key.preventDefault();
+            key.stopPropagation();
             return;
         }
         if ((key.name === "up" || key.name === "down") && showPopup) {
@@ -94,7 +110,24 @@ export function App() {
     }
 
     return (
-        <box flexDirection="column" style={{ width, height }}>
+        <box
+            flexDirection="column"
+            style={{ width, height }}
+            onMouseDown={(e) => {
+                mouseDownPos.current = { x: e.x, y: e.y, button: e.button };
+            }}
+            onMouseDrag={() => {
+                mouseDownPos.current = null;
+            }}
+            onMouseUp={(e) => {
+                const down = mouseDownPos.current;
+                mouseDownPos.current = null;
+                if (!down) return;
+                if (down.button !== 0 || e.button !== 0) return;
+                if (down.x !== e.x || down.y !== e.y) return;
+                inputRef.current?.focus();
+            }}
+        >
             <HeaderBar />
             <scrollbox
                 ref={scrollRef}
@@ -105,6 +138,7 @@ export function App() {
                 <Transcript />
             </scrollbox>
             <CommandPopup />
+            <SessionPalette />
             <StatusLine />
             <MessageInput inputRef={inputRef} />
         </box>

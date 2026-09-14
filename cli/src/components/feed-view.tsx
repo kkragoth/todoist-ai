@@ -5,6 +5,7 @@
 import type { FeedItem, ToolStep, Turn } from "@/types.js";
 import { isWorkingTurn, turnPhaseLabel } from "@/lib/turn.js";
 import { toolSummary } from "@/lib/text.js";
+import { useChatStore } from "@/stores/chat-store.js";
 import { ChatMessage } from "@/components/ui/chat-message.js";
 import { StreamingText } from "@/components/ui/streaming-text.js";
 import { ThinkingBlock } from "@/components/ui/thinking-block.js";
@@ -34,6 +35,9 @@ export function TurnView({ turn, now }: { turn: Turn; now: number }) {
                 label={label}
                 duration={duration}
                 content={working && turn.tools.length === 0 ? "Contacting model…" : toolSummary(turn.tools)}
+                onToggle={
+                    working ? undefined : () => useChatStore.getState().toggleTurnExpanded(turn.id)
+                }
             />
 
             {showTools &&

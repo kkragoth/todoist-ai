@@ -3,6 +3,7 @@ import { parseSlash } from "@/lib/slash.js";
 import { isThreadId } from "@/lib/text.js";
 import { useAuthStore } from "@/stores/auth-store.js";
 import { useChatStore } from "@/stores/chat-store.js";
+import { useSessionUiStore } from "@/stores/session-ui-store.js";
 import { useSessionStore } from "@/stores/session-store.js";
 
 /** Slash-command execution over the stores. Pure parsing lives in lib/slash.ts. */
@@ -15,7 +16,7 @@ export async function handleSlashCommand(raw: string): Promise<void> {
     switch (name) {
         case "help":
             chat.pushSystem(
-                "/clear · /thread [id] · /threads · /provider [name] · /model [name] · /logout · /quit — esc cancels a turn",
+                "/clear · /thread [id] · /threads · /sessions · /provider [name] · /model [name] · /logout · /quit — esc cancels a turn",
             );
             break;
         case "clear": {
@@ -59,12 +60,17 @@ export async function handleSlashCommand(raw: string): Promise<void> {
                             `${r.thread_id} · ${r.title} (${r.message_count} msgs)${String(r.thread_id) === session.threadId ? " ← current" : ""}`,
                         );
                     }
+                    chat.pushSystem("Tip: /sessions opens a searchable picker.");
                 }
             } catch (e) {
                 chat.pushSystem(e instanceof Error ? e.message : String(e));
             }
             break;
         }
+        case "sessions":
+            if (!session.token) break;
+            useSessionUiStore.getState().setPaletteOpen(true);
+            break;
         case "provider":
             if (!arg) {
                 chat.pushSystem(

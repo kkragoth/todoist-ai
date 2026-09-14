@@ -22,6 +22,7 @@ interface ChatState {
     enqueue: (text: string) => void;
     takeNextQueued: () => QueuedMessage | undefined;
     toggleLastThinking: () => void;
+    toggleTurnExpanded: (id: number) => void;
     clearFeed: () => void;
     setBusy: (busy: boolean) => void;
     setStatus: (status: string) => void;
@@ -60,6 +61,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         }));
         return next;
     },
+    toggleTurnExpanded: (id) =>
+        set((s) => ({
+            feed: s.feed.map((item) =>
+                item.kind === "turn" && item.turn.id === id
+                    ? { ...item, turn: { ...item.turn, expanded: !item.turn.expanded } }
+                    : item,
+            ),
+        })),
     toggleLastThinking: () =>
         set((s) => {
             let target = -1;

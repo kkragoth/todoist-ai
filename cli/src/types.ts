@@ -55,6 +55,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     { name: "/clear", usage: "/clear", desc: "delete server history for this thread" },
     { name: "/thread", usage: "/thread <id>", desc: "show or switch numeric thread" },
     { name: "/threads", usage: "/threads", desc: "list your threads" },
+    { name: "/sessions", usage: "/sessions", desc: "search, resume, or start sessions" },
     { name: "/provider", usage: "/provider [name]", desc: "show or set provider" },
     { name: "/model", usage: "/model [name]", desc: "show or set model" },
     { name: "/logout", usage: "/logout", desc: "drop saved token" },
@@ -80,5 +81,16 @@ export function nextAuthFocus(focus: AuthFocus): AuthFocus {
             return AuthFocus.Pass;
         case AuthFocus.Pass:
             return AuthFocus.Tabs;
+    }
+}
+
+export function prevAuthFocus(focus: AuthFocus): AuthFocus {
+    switch (focus) {
+        case AuthFocus.Tabs:
+            return AuthFocus.Pass;
+        case AuthFocus.User:
+            return AuthFocus.Tabs;
+        case AuthFocus.Pass:
+            return AuthFocus.User;
     }
 }
