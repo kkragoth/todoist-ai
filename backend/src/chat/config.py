@@ -50,6 +50,11 @@ RECURSION_LIMIT = int(os.getenv("CHAT_RECURSION_LIMIT", "25"))
 HISTORY_LIMIT = int(os.getenv("CHAT_HISTORY_LIMIT", "30"))
 TURN_TIMEOUT_SECONDS = float(os.getenv("CHAT_TURN_TIMEOUT_SECONDS", "180"))
 
+# ask_user caps. Single source of truth for normalize_ask in service.py;
+# AskUserArgs in tools.py mirrors these in its Field constraints.
+MAX_ASK_OPTIONS = 4
+MAX_QUESTION_CHARS = 300
+
 
 def default_model_for(provider: str) -> str:
     if provider == "llamacpp":

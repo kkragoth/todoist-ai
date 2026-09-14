@@ -14,32 +14,37 @@ from . import events, schemas, models
 
 router = APIRouter(prefix="/api/todos", tags=["Todos"])
 
-@router.get("")
+@router.get("", response_model=list[schemas.TodoOut])
 def get_todos(
     target_date: date | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     completed: bool | None = None,
     include_archived: bool = False,
+    q: str | None = None,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
 ):
     """Query todos. If target_date is provided, filter by that specific date.
     date_from/date_to define an inclusive range filter (e.g. a week).
     If completed is provided, filter by completion status (False = unfinished).
-    Archived todos are hidden unless include_archived is True."""
-    query = db.query(models.Todo).filter(models.Todo.user_id == current_user.id)
-    if target_date:
-        query = query.filter(models.Todo.todo_date == target_date)
-    if date_from:
-        query = query.filter(models.Todo.todo_date >= date_from)
-    if date_to:
-        query = query.filter(models.Todo.todo_date <= date_to)
-    if completed is not None:
-        query = query.filter(models.Todo.completed == completed)
-    if not include_archived:
-        query = query.filter(models.Todo.archived == False)  # noqa: E712
-    return query.all()
+    q is a fuzzy name filter on the task (substring-exact, typo-tolerant).
+    Archived todos are hidden unless include_archived is True.
+    Shape is unchanged (a JSON list) — the frontend `Todo[]` still fits."""
+    from . import service as todo_service
+
+    try:
+        todos = todo_service.query_todos(
+            current_user.id,
+            completed=completed,
+            include_archived=include_archived,
+            query=q,
+            target_date=target_date,
+            date_from=date_from,
+            date_to=date_to,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return [schemas.TodoOut.model_validate(t) for t in todos]
 
 @router.get("/events")
 async def todo_events(user: User = Depends(get_query_user)):

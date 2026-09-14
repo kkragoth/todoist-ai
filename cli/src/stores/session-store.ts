@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { apiHealth } from "@/api.js";
+import { ConnectionStatus } from "@/lib/connection.js";
 import { clearToken, loadToken, saveTokenData } from "@/lib/token-file.js";
 import type { CliOptions } from "@/types.js";
 
@@ -11,6 +13,7 @@ interface SessionState {
     threadId: string;
     provider: string | undefined;
     model: string | undefined;
+    connection: ConnectionStatus;
     init: (options: CliOptions) => void;
     signIn: (token: string, username: string) => void;
     signOut: () => void;
@@ -19,15 +22,19 @@ interface SessionState {
     setThreadId: (threadId: string) => void;
     setProvider: (provider: string | undefined) => void;
     setModel: (model: string | undefined) => void;
+    setConnection: (connection: ConnectionStatus) => void;
+    /** Probe GET /health with a short timeout and flip connection state. */
+    checkConnection: () => Promise<boolean>;
 }
 
-export const useSessionStore = create<SessionState>()((set) => ({
+export const useSessionStore = create<SessionState>()((set, get) => ({
     apiUrl: "http://localhost:8000",
     token: loadToken(),
     username: "",
     threadId: "",
     provider: undefined,
     model: undefined,
+    connection: ConnectionStatus.Connecting,
     init: (options) =>
         set({
             apiUrl: options.apiUrl,
@@ -51,4 +58,12 @@ export const useSessionStore = create<SessionState>()((set) => ({
     setThreadId: (threadId) => set({ threadId }),
     setProvider: (provider) => set({ provider }),
     setModel: (model) => set({ model }),
+    setConnection: (connection) => set({ connection }),
+    checkConnection: async () => {
+        const { apiUrl } = get();
+        set({ connection: ConnectionStatus.Connecting });
+        const ok = await apiHealth(apiUrl);
+        set({ connection: ok ? ConnectionStatus.Connected : ConnectionStatus.Disconnected });
+        return ok;
+    },
 }));

@@ -4,7 +4,7 @@
  * ToolCall (one row per tool invocation). */
 import type { FeedItem, ToolStep, Turn } from "@/types.js";
 import { isWorkingTurn, turnPhaseLabel } from "@/lib/turn.js";
-import { toolSummary } from "@/lib/text.js";
+import { thinkingContent } from "@/lib/text.js";
 import { useChatStore } from "@/stores/chat-store.js";
 import { ChatMessage } from "@/components/ui/chat-message.js";
 import { StreamingText } from "@/components/ui/streaming-text.js";
@@ -19,7 +19,7 @@ function stepStatus(step: ToolStep, working: boolean): ToolCallStatus {
 
 export function TurnView({ turn, now }: { turn: Turn; now: number }) {
     const working = isWorkingTurn(turn);
-    const showTools = working || turn.expanded;
+    const showTools = turn.expanded;
     const duration = (turn.endedAt ?? now) - turn.startedAt;
     const label = turnPhaseLabel(turn);
 
@@ -31,11 +31,11 @@ export function TurnView({ turn, now }: { turn: Turn; now: number }) {
 
             <ThinkingBlock
                 streaming={working}
-                collapsed={working ? false : !turn.expanded}
+                collapsed={!turn.expanded}
                 label={label}
                 duration={duration}
-                content={working && turn.tools.length === 0 ? "Contacting model…" : toolSummary(turn.tools)}
-                onToggle={working ? undefined : () => useChatStore.getState().toggleTurnExpanded(turn.id)}
+                content={thinkingContent(turn, working)}
+                onToggle={() => useChatStore.getState().toggleTurnExpanded(turn.id)}
             />
 
             {showTools &&
@@ -54,6 +54,23 @@ export function TurnView({ turn, now }: { turn: Turn; now: number }) {
 
             <ChatMessage sender="assistant" name="Assistant" streaming={working} selectable>
                 <>
+                    {turn.clarification && (
+                        <box flexDirection="column">
+                            <text fg="#eab308">❓ {turn.clarification.question}</text>
+                            {turn.clarification.options.map((o, i) => (
+                                <text key={i} fg="#666">
+                                    {"  "}
+                                    {i + 1}. {o}
+                                </text>
+                            ))}
+                            <text fg="#666">
+                                {"  "}↳{" "}
+                                {turn.clarification.options.length > 0
+                                    ? "Reply with the number, or type your own answer."
+                                    : "Type your answer below."}
+                            </text>
+                        </box>
+                    )}
                     <StreamingText text={turn.answer} selectable cursor={false} />
                     {working && <text fg="#666">▍</text>}
                 </>

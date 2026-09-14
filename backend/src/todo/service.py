@@ -4,41 +4,165 @@ This module is the single source of truth for todo CRUD. Both the MCP
 tools (mcp_server/tools.py) and the chat agent (chat/tools.py) call these
 functions in-process, so the backend never SSE-hops to itself.
 
-Each function opens a short-lived DB session, touches only rows owned
-by `user_id`, broadcasts a `todos-changed` SSE event, and returns a
-display-ready string the model can echo verbatim.
+Split by consumer (text for talking, JSON for rendering):
+
+- `query_todos` — pure data query, returns ORM rows. Raises ValueError
+  on bad date strings instead of returning error text.
+- `format_todos` — text presenter FOR THE LLM (echo-verbatim lines with
+  an `N open, M done:` summary the model must not recount).
+- `to_todo_list_out` — JSON presenter FOR PROGRAMS (REST/MCP/clients).
+- `list_todos` — back-compat wrapper returning the text presenter,
+  used by the chat agent. New code should prefer `query_todos`.
+
+Each function opens a short-lived DB session and touches only rows
+owned by `user_id`. Mutations broadcast a `todos-changed` SSE event.
 """
 
 from datetime import date
+from difflib import SequenceMatcher
 
 from core.database import SessionLocal
-from todo import events, models
+from todo import events, models, schemas
+
+# Easy toggle for ambiguous "what are my todos" queries: None = show both
+# open and done with a summary line, False = open only, True = done only.
+# The chat/MCP `completed` arg overrides this only when explicitly passed.
+LIST_DEFAULT_COMPLETED: bool | None = None
+
+# Minimum SequenceMatcher ratio to keep a non-substring fuzzy hit.
+FUZZY_THRESHOLD = 0.4
+
+
+def fuzzy_score(query: str, text: str) -> float:
+    """Rank `text` against `query`. Substring hits score highest so exact
+    words always outrank typo guesses; otherwise fall back to ratio."""
+    q = query.lower().strip()
+    t = text.lower()
+    if not q:
+        return 1.0
+    if q in t:
+        return 1.0
+    tokens = q.split()
+    if tokens and all(tok in t for tok in tokens):
+        return 0.95
+    return SequenceMatcher(None, q, t).ratio()
 
 
 def format_todos(todos: list) -> str:
-    """Render todos as display-ready lines so the model echoes them verbatim."""
-    lines = []
+    """Text presenter FOR THE LLM — display-ready lines echoed verbatim.
+
+    First line is always a summary so ambiguous queries ("what are my
+    todos") show open/done counts without extra tool calls.
+    """
+    open_n = sum(1 for t in todos if not t.completed)
+    done_n = sum(1 for t in todos if t.completed)
+    lines = [f"{open_n} open, {done_n} done:"]
     for t in todos:
         mark = "✅" if t.completed else "❌"
         lines.append(f"• {mark} {t.task} (ID: {t.id}, {t.todo_date})")
     return "\n".join(lines)
 
 
+def to_todo_list_out(todos: list) -> schemas.TodoListOut:
+    """JSON presenter FOR PROGRAMS — typed counts plus typed rows."""
+    items = [
+        schemas.TodoOut(
+            id=t.id,
+            task=t.task,
+            completed=bool(t.completed),
+            archived=bool(t.archived),
+            user_id=t.user_id,
+            todo_date=t.todo_date,
+            created_at=t.created_at,
+        )
+        for t in todos
+    ]
+    return schemas.TodoListOut(
+        open=sum(1 for t in todos if not t.completed),
+        done=sum(1 for t in todos if t.completed),
+        todos=items,
+    )
+
+
+def parse_filter_date(value: str | date | None, name: str) -> date | None:
+    """Accept an ISO string or a date, return a date. Raises ValueError."""
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"bad {name} '{value}' — use YYYY-MM-DD.")
+
+
+def query_todos(
+    user_id: int,
+    completed: bool | None = None,
+    include_archived: bool = False,
+    query: str | None = None,
+    target_date: str | date | None = None,
+    date_from: str | date | None = None,
+    date_to: str | date | None = None,
+    overdue: bool = False,
+) -> list:
+    """Pure data query: user-scoped ORM rows, fuzzy-ranked when `query`
+    is given. Raises ValueError on bad date strings."""
+    target = parse_filter_date(target_date, "target_date")
+    start = parse_filter_date(date_from, "date_from")
+    end = parse_filter_date(date_to, "date_to")
+    today = date.today()
+    db = SessionLocal()
+    try:
+        db_query = db.query(models.Todo).filter(models.Todo.user_id == user_id)
+        if completed is not None:
+            db_query = db_query.filter(models.Todo.completed == completed)
+        if not include_archived:
+            db_query = db_query.filter(models.Todo.archived == False)  # noqa: E712
+        if target:
+            db_query = db_query.filter(models.Todo.todo_date == target)
+        if start:
+            db_query = db_query.filter(models.Todo.todo_date >= start)
+        if end:
+            db_query = db_query.filter(models.Todo.todo_date <= end)
+        if overdue:
+            db_query = db_query.filter(models.Todo.todo_date < today)
+            if completed is None:
+                db_query = db_query.filter(models.Todo.completed == False)  # noqa: E712
+        todos = db_query.order_by(models.Todo.id).all()
+    finally:
+        db.close()
+    if query and query.strip():
+        scored = [(fuzzy_score(query, t.task), t) for t in todos]
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        todos = [t for s, t in scored if s >= FUZZY_THRESHOLD]
+    return todos
+
+
 def list_todos(
     user_id: int,
     completed: bool | None = None,
     include_archived: bool = False,
+    query: str | None = None,
+    target_date: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    overdue: bool = False,
 ) -> str:
-    db = SessionLocal()
+    """Back-compat text wrapper for the chat agent. New code: `query_todos`."""
     try:
-        query = db.query(models.Todo).filter(models.Todo.user_id == user_id)
-        if completed is not None:
-            query = query.filter(models.Todo.completed == completed)
-        if not include_archived:
-            query = query.filter(models.Todo.archived == False)  # noqa: E712
-        todos = query.order_by(models.Todo.id).all()
-    finally:
-        db.close()
+        todos = query_todos(
+            user_id,
+            completed=completed,
+            include_archived=include_archived,
+            query=query,
+            target_date=target_date,
+            date_from=date_from,
+            date_to=date_to,
+            overdue=overdue,
+        )
+    except ValueError as e:
+        return f"Error: {e}"
     if not todos:
         return "No tasks found."
     return format_todos(todos)
