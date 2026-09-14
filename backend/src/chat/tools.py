@@ -4,6 +4,11 @@ Same four operations as the MCP server, but called in-process via
 todo.service — no SSE hop. Each tool closes over `user_id`, so the model
 never sees credentials and there is no cross-user leak.
 
+The list tool deliberately returns the TEXT presenter (`format_todos`):
+the consumer is a sentence, not a component. Programs that render UI
+should use `query_todos` + `TodoListOut` (see `todo/service.py` and the
+MCP `list_todos_structured` tool) instead of parsing chat text.
+
 Explicit nulls are dropped before calling the service: small models send
 {"completed": None}, which would otherwise override server defaults.
 Real False/0/"" are kept.
@@ -21,10 +26,21 @@ from todo import service as todo_service
 class ListTodosArgs(BaseModel):
     completed: Optional[bool] = Field(
         default=None,
-        description="False = unfinished only, True = completed only, leave out for all.",
+        description="Leave UNSET for normal 'my todos/tasks today' questions so both open and done return with counts. Only False for open/remaining/left/unfinished/overdue, True for done/finished/completed.",
     )
     include_archived: bool = Field(
         default=False, description="True also shows archived tasks. Default False (hidden)."
+    )
+    query: Optional[str] = Field(
+        default=None,
+        description="Fuzzy name filter, e.g. 'milk' matches 'buy milk'. Pass it when the user names a task; combine with target_date when they also say a day ('clean up my room today').",
+    )
+    target_date: Optional[str] = Field(
+        default=None,
+        description="YYYY-MM-DD for one day. Pass today for 'today' questions, or the named day. Omit for all dates. Never answer a 'today' question from an unfiltered listing — re-call with target_date instead of hiding rows.",
+    )
+    overdue: bool = Field(
+        default=False, description="True = only past-due open tasks."
     )
 
 
@@ -71,13 +87,20 @@ def build_tools_for_user(user_id: int) -> list[StructuredTool]:
     """Create the four todo tools closed over `user_id`."""
 
     async def list_todos_tool(
-        completed: Optional[bool] = None, include_archived: bool = False
+        completed: Optional[bool] = None,
+        include_archived: bool = False,
+        query: Optional[str] = None,
+        target_date: Optional[str] = None,
+        overdue: bool = False,
     ) -> str:
-        kwargs = drop_nones({"completed": completed})
+        kwargs = drop_nones(
+            {"completed": completed, "query": query, "target_date": target_date}
+        )
         return await asyncio.to_thread(
             todo_service.list_todos,
             user_id,
             include_archived=include_archived,
+            overdue=overdue,
             **kwargs,
         )
 
@@ -120,8 +143,14 @@ def build_tools_for_user(user_id: int) -> list[StructuredTool]:
             name="list_todos",
             description=(
                 "List todo tasks for the authenticated user. "
-                "completed: False = unfinished only, True = completed only, "
-                "leave it out for all. "
+                "Normal 'my todos/tasks today': pass target_date=today and leave "
+                "completed UNSET so open+done come back with counts. "
+                "completed=False only for open/remaining/left/unfinished/overdue, "
+                "True only for done/finished/completed. "
+                "query: fuzzy name filter, combine with target_date when the user "
+                "names a task plus a day. "
+                "Echo EVERY returned bullet to the user, never hide rows; "
+                "a wrong (unfiltered) listing means re-calling with target_date. "
                 "include_archived: True also shows archived tasks."
             ),
             args_schema=ListTodosArgs,
@@ -140,7 +169,9 @@ def build_tools_for_user(user_id: int) -> list[StructuredTool]:
             name="update_todo",
             description=(
                 "Modify an existing todo: rename, reschedule, or (un)complete it. "
-                "Use IDs from listed results, never guess one."
+                "Use IDs from listed results, never guess one. "
+                "A date word narrows candidates ('X today' = only rows dated today); "
+                "with zero or 2+ matches, call ask_user instead of acting."
             ),
             args_schema=UpdateTodoArgs,
         ),
