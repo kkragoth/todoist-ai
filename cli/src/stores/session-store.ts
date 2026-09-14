@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { clearToken, loadToken, saveTokenData } from "@/auth-store.js";
+import { clearToken, loadToken, saveTokenData } from "@/lib/token-file.js";
 import type { CliOptions } from "@/types.js";
 
 /** Global session + connection settings. Token is restored once at boot;

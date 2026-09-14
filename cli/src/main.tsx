@@ -3,6 +3,7 @@ import { createRoot } from "@opentui/react";
 import { App } from "@/App.js";
 import { HELP_TEXT, parseArgs } from "@/config.js";
 import { useSessionStore } from "@/stores/session-store.js";
+import { useAuthStore } from "@/stores/auth-store.js";
 
 async function main(): Promise<void> {
     const options = parseArgs(process.argv.slice(2));
@@ -12,6 +13,7 @@ async function main(): Promise<void> {
     }
 
     useSessionStore.getState().init(options);
+    useAuthStore.getState().boot();
     const renderer = await createCliRenderer({ exitOnCtrlC: true, useMouse: true });
     createRoot(renderer).render(<App />);
 }

@@ -7,6 +7,8 @@ export interface QueuedMessage {
     text: string;
 }
 
+let flashTimer: ReturnType<typeof setTimeout> | null = null;
+
 /** Global chat transcript + turn lifecycle. Components subscribe to slices;
  * orchestration (SSE loop, slash commands) lives in hooks, never in views. */
 interface ChatState {
@@ -23,6 +25,9 @@ interface ChatState {
     clearFeed: () => void;
     setBusy: (busy: boolean) => void;
     setStatus: (status: string) => void;
+    flash: string;
+    flashMessage: (text: string) => void;
+    clearFlash: () => void;
 }
 
 export const useChatStore = create<ChatState>()((set, get) => ({
@@ -75,6 +80,13 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             };
         }),
     clearFeed: () => set({ feed: [] }),
-    setBusy: (busy) => set({ busy }),
-    setStatus: (status) => set({ status }),
+    setBusy: (busy: boolean) => set({ busy }),
+    setStatus: (status: string) => set({ status }),
+    flash: "",
+    flashMessage: (text: string) => {
+        if (flashTimer) clearTimeout(flashTimer);
+        set({ flash: text });
+        flashTimer = setTimeout(() => useChatStore.getState().clearFlash(), 2500);
+    },
+    clearFlash: () => set({ flash: "" }),
 }));
