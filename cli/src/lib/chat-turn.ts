@@ -1,5 +1,14 @@
 import { openChatTurn } from "@/api.js";
-import { appendAnswer, cancelTurn, completeTurnIfWorking, createTurn, failTurn } from "@/lib/turn.js";
+import { ConnectionStatus } from "@/lib/connection.js";
+import {
+    appendAnswer,
+    cancelTurn,
+    completeTurnIfWorking,
+    createTurn,
+    failTurn,
+    resolveClarificationPick,
+    setClarification,
+} from "@/lib/turn.js";
 import { useChatStore } from "@/stores/chat-store.js";
 import { useSessionStore } from "@/stores/session-store.js";
 
@@ -17,11 +26,13 @@ export async function startTurn(userText: string): Promise<void> {
     const turn = createTurn(userText);
     const id = turn.id;
     chat.pushTurn(turn);
+    chat.markClarificationsAnswered(id);
     chat.setBusy(true);
     chat.setStatus("Thinking…");
     const ctrl = new AbortController();
     abortController = ctrl;
     let sawContent = false;
+    let sawAsk = false;
     try {
         const opened = await openChatTurn({
             apiUrl: session.apiUrl,
@@ -33,6 +44,7 @@ export async function startTurn(userText: string): Promise<void> {
             signal: ctrl.signal,
         });
         if (opened.threadId) session.setThreadId(opened.threadId);
+        session.setConnection(ConnectionStatus.Connected);
         for await (const evt of opened.events) {
             if (evt.type === "token") {
                 sawContent = true;
@@ -59,6 +71,14 @@ export async function startTurn(userText: string): Promise<void> {
                     return { ...t, tools };
                 });
                 chat.setStatus("Thinking…");
+            } else if (evt.type === "ask_user") {
+                sawContent = true;
+                sawAsk = true;
+                const question =
+                    typeof evt.question === "string" && evt.question.trim() ? evt.question : "Could you clarify?";
+                const options = Array.isArray(evt.options) ? evt.options.filter((o) => typeof o === "string") : [];
+                chat.updateTurn(id, (t) => setClarification(t, question, options));
+                chat.setStatus("Waiting for your answer…");
             } else if (evt.type === "error") {
                 chat.updateTurn(id, failTurn);
                 chat.pushSystem(evt.message);
@@ -66,7 +86,7 @@ export async function startTurn(userText: string): Promise<void> {
             } else if (evt.type === "done") {
                 chat.updateTurn(id, completeTurnIfWorking);
                 const queued = useChatStore.getState().queue.length;
-                chat.setStatus(queued > 0 ? "Sending queued message…" : "Ready.");
+                chat.setStatus(queued > 0 ? "Sending queued message…" : sawAsk ? "Waiting for your answer…" : "Ready.");
             }
         }
         if (!sawContent) {
@@ -78,8 +98,18 @@ export async function startTurn(userText: string): Promise<void> {
             chat.pushSystem("Turn cancelled.");
             chat.setStatus("Ready.");
         } else {
+            const message = e instanceof Error ? e.message : String(e);
+            if (
+                message.includes("fetch failed") ||
+                message.includes("fetch") ||
+                message.includes("unreachable") ||
+                message.includes("ECONNREFUSED") ||
+                message.includes("Network")
+            ) {
+                session.setConnection(ConnectionStatus.Disconnected);
+            }
             chat.updateTurn(id, failTurn);
-            chat.pushSystem(`that turn failed (${e instanceof Error ? e.message : String(e)}). Try rephrasing.`);
+            chat.pushSystem(`that turn failed (${message}). Try rephrasing.`);
             chat.setStatus("Turn failed.");
         }
     } finally {
@@ -87,18 +117,22 @@ export async function startTurn(userText: string): Promise<void> {
         abortController = null;
         const next = chat.takeNextQueued();
         if (next) {
-            void startTurn(next.text);
+            // Re-resolve against the fresh feed: a digit queued before the
+            // ask_user event arrived still picks the right option.
+            const fresh = useChatStore.getState();
+            void startTurn(resolveClarificationPick(fresh.feed, next.text));
         }
     }
 }
 
 export function submitChatText(text: string): void {
     const chat = useChatStore.getState();
+    const resolved = resolveClarificationPick(chat.feed, text);
     if (chat.busy) {
-        chat.enqueue(text);
+        chat.enqueue(resolved);
         return;
     }
-    void startTurn(text);
+    void startTurn(resolved);
 }
 
 export function cancelTurnRequest(): void {

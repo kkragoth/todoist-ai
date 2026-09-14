@@ -1,6 +1,7 @@
+import { ConnectionStatusBadge } from "@/components/connection-status.js";
 import { useSessionStore } from "@/stores/session-store.js";
 
-/** Top title bar: user · provider:model · thread. */
+/** Top title bar: user · provider:model · thread · connection state. */
 export function HeaderBar() {
     const username = useSessionStore((s) => s.username);
     const provider = useSessionStore((s) => s.provider);
@@ -8,7 +9,13 @@ export function HeaderBar() {
     const threadId = useSessionStore((s) => s.threadId);
 
     return (
-        <box border borderStyle="single" style={{ paddingLeft: 1, paddingRight: 1 }}>
+        <box
+            border
+            borderStyle="single"
+            flexDirection="row"
+            justifyContent="space-between"
+            style={{ paddingLeft: 1, paddingRight: 1 }}
+        >
             <text>
                 <strong fg="cyan">Todoist AI</strong>
                 <span fg="gray">
@@ -16,6 +23,7 @@ export function HeaderBar() {
                     · {username || "…"} · {provider ?? "default"}:{model ?? "default"} · thread {threadId || "…"}
                 </span>
             </text>
+            <ConnectionStatusBadge />
         </box>
     );
 }

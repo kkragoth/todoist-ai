@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { useTheme } from "@/hooks/use-theme";
+import { oneLine, splitOutputLines } from "@/lib/text.js";
 
 export type ToolCallStatus = "pending" | "running" | "success" | "error";
 
@@ -102,22 +103,22 @@ export const ToolCall = ({
 
     return (
         <box flexDirection="column">
-            <box gap={1}>
+            <box flexDirection="row" gap={1}>
                 {statusIcon()}
                 <text fg={nameColor}>{status !== "pending" ? <b>{name}</b> : name}</text>
                 {durationText && <text fg={theme.colors.mutedForeground}>{`(${durationText})`}</text>}
                 {collapsible && <text fg="#666">{collapsed ? "▶" : "▼"}</text>}
             </box>
 
-            {!collapsed && (
+            {collapsed || (
                 <box flexDirection="column" paddingLeft={2}>
                     {args && Object.keys(args).length > 0 && (
                         <box flexDirection="column">
                             <text fg="#666">Args:</text>
                             {...Object.entries(args).map(([k, v]) => (
-                                <box key={k} gap={1}>
+                                <box key={k} flexDirection="row" gap={1}>
                                     <text fg={theme.colors.accent}>{`${k}:`}</text>
-                                    <text fg="#666">{JSON.stringify(v)}</text>
+                                    <text fg="#666">{oneLine(JSON.stringify(v), 80)}</text>
                                 </box>
                             ))}
                         </box>
@@ -125,9 +126,13 @@ export const ToolCall = ({
                     {result !== undefined && (
                         <box flexDirection="column">
                             <text fg="#666">Result:</text>
-                            <text fg="#666">
-                                {typeof result === "string" ? result : JSON.stringify(result, null, 2)}
-                            </text>
+                            {splitOutputLines(
+                                typeof result === "string" ? result : JSON.stringify(result, null, 2),
+                            ).map((line, i) => (
+                                <text key={i} fg="#666">
+                                    {line}
+                                </text>
+                            ))}
                         </box>
                     )}
                 </box>

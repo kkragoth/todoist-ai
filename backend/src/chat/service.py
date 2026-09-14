@@ -16,8 +16,14 @@ Yields event dicts (JSON-serializable, SSE-framed by router.py):
   {"type": "token", "content": "..."}
   {"type": "tool_call", "tool": ..., "args": {...}}
   {"type": "tool_result", "tool": ..., "output": "..."}
+  {"type": "ask_user", "question": "...", "options": [...]}
   {"type": "done"}
   {"type": "error", "message": "..."}
+
+ask_user is terminal: the first ask_user tool call is surfaced as an
+ask_user event (not a generic tool_call) and ends the turn after its
+ToolMessage lands in history, so the user's next message continues with
+full context. Extra ask_user calls in the same turn are ignored.
 """
 
 import asyncio
@@ -35,6 +41,28 @@ from .prompt import system_prompt
 from .tools import build_tools_for_user
 
 logger = logging.getLogger(__name__)
+
+ASK_USER_TOOL = "ask_user"
+
+
+def normalize_ask(args) -> dict | None:
+    """Build an ask_user event from raw tool args. None when unusable."""
+    if not isinstance(args, dict):
+        return None
+    question = str(args.get("question") or "").strip()
+    if not question:
+        return None
+    raw_options = args.get("options") or []
+    if not isinstance(raw_options, list):
+        raw_options = []
+    options = [str(o).strip() for o in raw_options if str(o).strip()][
+        : config.MAX_ASK_OPTIONS
+    ]
+    return {
+        "type": "ask_user",
+        "question": question[: config.MAX_QUESTION_CHARS],
+        "options": options,
+    }
 
 
 def text_delta(content) -> str:
@@ -66,6 +94,36 @@ def safe_text(value) -> str:
         return json.dumps(value, default=str)
     except (TypeError, ValueError):
         return str(value)
+
+
+class AnswerPrefixStripper:
+    """Drops decorative result-marks from the very start of a streamed answer.
+
+    The model likes to echo tool results as "✅ Updated Task #7: ...", and
+    that leading ✅ reads as "task completed" even when the task is still
+    open. Only the answer start is touched — echoed `• ✅/❌` result lines
+    keep their completion marks, and ❌ is never stripped (it can't falsely
+    imply completion). The prefix is buffered until the first real char
+    because the mark and the text may arrive in separate chunks.
+    """
+
+    MARKS = "✅✔✓🎉👍"
+    WS = " \t\n"
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._done = False
+
+    def feed(self, delta: str) -> str:
+        if self._done:
+            return delta
+        self._buf += delta
+        rest = self._buf.lstrip(self.WS + self.MARKS)
+        if not rest:
+            return ""
+        self._done = True
+        self._buf = ""
+        return rest
 
 
 async def run_turn(
@@ -101,11 +159,19 @@ async def run_turn(
     fresh: list = []
     seen_tool_ids: set = set()
     tool_names: dict[str, str] = {}  # tool_call id -> name (for tool_result)
+    ask_event: dict | None = None
+    ask_call_ids: set = set()
+    ask_done = False
+    prefix_stripper = AnswerPrefixStripper()
 
-    def announce_tool_call(tc) -> dict | None:
+    def call_parts(tc) -> tuple:
         name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
         args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
         call_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
+        return name, args, call_id
+
+    def announce_tool_call(tc) -> dict | None:
+        name, args, call_id = call_parts(tc)
         key = call_id or (name, str(args or ""))
         if key in seen_tool_ids:
             return None
@@ -113,6 +179,51 @@ async def run_turn(
         if call_id and name:
             tool_names[call_id] = name
         return {"type": "tool_call", "tool": name, "args": args or {}}
+
+    def check_ask(tc) -> dict | None:
+        """Route one ask_user call to its event. The first call wins; later
+        ones are ignored. A malformed call still yields a fallback question
+        so the turn never ends silently.
+
+        Every ask_user call id is recorded so its ToolMessage can be
+        suppressed (the client already got the ask_user event) while still
+        landing in history for next-turn context.
+        """
+        nonlocal ask_event
+        name, args, call_id = call_parts(tc)
+        if name != ASK_USER_TOOL:
+            return None
+        if call_id:
+            tool_names[call_id] = ASK_USER_TOOL
+            ask_call_ids.add(call_id)
+        if ask_event is not None:
+            return None
+        event = normalize_ask(args)
+        if event is None:
+            logger.warning(
+                "chat ask_user with unusable args (user_id=%s args=%r)",
+                user_id,
+                str(args)[:120],
+            )
+            event = {
+                "type": "ask_user",
+                "question": "Could you clarify which task you mean?",
+                "options": [],
+            }
+        ask_event = event
+        logger.info(
+            "chat ask_user (user_id=%s question=%r)",
+            user_id,
+            event["question"][:80],
+        )
+        return event
+
+    def route_tool_call(tc) -> dict | None:
+        """Route one tool call to its SSE event. Ask calls yield ask_user,
+        everything else a generic tool_call. None means duplicate."""
+        if call_parts(tc)[0] == ASK_USER_TOOL:
+            return check_ask(tc)
+        return announce_tool_call(tc)
 
     try:
         # asyncio.timeout (not an elapsed check inside the loop): fires even
@@ -140,9 +251,11 @@ async def run_turn(
                         continue
                     delta = text_delta(getattr(chunk, "content", ""))
                     if delta:
+                        delta = prefix_stripper.feed(delta)
+                    if delta:
                         yield {"type": "token", "content": delta}
                     for tc in getattr(chunk, "tool_calls", None) or []:
-                        event = announce_tool_call(tc)
+                        event = route_tool_call(tc)
                         if event is not None:
                             yield event
                 elif mode == "updates":
@@ -153,18 +266,27 @@ async def run_turn(
                         msgs = upd if isinstance(upd, list) else [upd]
                         for m in msgs:
                             if m.__class__.__name__ == "ToolMessage":
-                                yield {
-                                    "type": "tool_result",
-                                    "tool": tool_names.get(
-                                        getattr(m, "tool_call_id", ""), getattr(m, "name", "")
-                                    ),
-                                    "output": safe_text(getattr(m, "content", "")),
-                                }
+                                tool_call_id = getattr(m, "tool_call_id", "")
+                                tool = tool_names.get(
+                                    tool_call_id, getattr(m, "name", "")
+                                )
+                                if tool == ASK_USER_TOOL or tool_call_id in ask_call_ids:
+                                    # Client already got the ask_user event;
+                                    # keep the message in history, skip the noise.
+                                    ask_done = True
+                                else:
+                                    yield {
+                                        "type": "tool_result",
+                                        "tool": tool,
+                                        "output": safe_text(getattr(m, "content", "")),
+                                    }
                             for tc in getattr(m, "tool_calls", None) or []:
-                                event = announce_tool_call(tc)
+                                event = route_tool_call(tc)
                                 if event is not None:
                                     yield event
                         fresh.extend(msgs)
+                    if ask_done:
+                        break
 
         if fresh:
             await history.append_turn(

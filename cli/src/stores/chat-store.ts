@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import type { FeedItem, Turn } from "@/types.js";
-import { nextQueueId, nextSystemId } from "@/lib/turn.js";
+import { clearClarification, nextQueueId, nextSystemId } from "@/lib/turn.js";
 
 export interface QueuedMessage {
     id: number;
@@ -19,6 +19,8 @@ interface ChatState {
     pushSystem: (text: string) => void;
     pushTurn: (turn: Turn) => void;
     updateTurn: (id: number, fn: (turn: Turn) => Turn) => void;
+    /** Clear clarification flags on all turns except `exceptId` (answered/superseded). */
+    markClarificationsAnswered: (exceptId: number) => void;
     enqueue: (text: string) => void;
     takeNextQueued: () => QueuedMessage | undefined;
     toggleLastThinking: () => void;
@@ -42,6 +44,14 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         set((s) => ({
             feed: s.feed.map((item) =>
                 item.kind === "turn" && item.turn.id === id ? { ...item, turn: fn(item.turn) } : item,
+            ),
+        })),
+    markClarificationsAnswered: (exceptId) =>
+        set((s) => ({
+            feed: s.feed.map((item) =>
+                item.kind === "turn" && item.turn.id !== exceptId
+                    ? { ...item, turn: clearClarification(item.turn) }
+                    : item,
             ),
         })),
     enqueue: (text) => {

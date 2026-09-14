@@ -60,6 +60,11 @@ def update_todo(
     headers: dict = CurrentHeaders(),
 ) -> str:
     """Modify an existing todo: rename, reschedule, or (un)complete it.
+    Use IDs from listed results, never guess one. Before acting you must
+    have exactly one candidate: compare the user's words against listed
+    task text and dates. With zero or 2+ matches, ask the user (naming
+    task + date + ID options) instead of acting. All/both/every means one
+    call per matching ID.
 
     Args:
         todo_id: The ID of the task to update.
@@ -86,6 +91,9 @@ def archive_todo(
     headers: dict = CurrentHeaders(),
 ) -> str:
     """Archive a todo task so it is hidden from normal listings.
+    Use IDs from listed results, never guess one. With zero or 2+ matches,
+    ask the user instead of acting; all/both/every means one call per
+    matching ID.
 
     Args:
         todo_id: The ID of the task to archive.
