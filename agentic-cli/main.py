@@ -27,7 +27,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 
-from auth import get_or_prompt_auth
+from auth import clear_stored_token, fetch_me, get_or_prompt_auth
+from utils import TurnSpinner, text_delta
 
 # --- 2. Config: three knobs -------------------------------------------------
 # MODEL: the only thing you change to trial a bigger brain (Ollama path).
@@ -156,52 +157,29 @@ def system_prompt(today_str: str) -> SystemMessage:
 #                  ends) or text + tool_calls (loop continues)
 #   tools node  -> executes each tool_call, appends a ToolMessage per result,
 #                  hands control back to the model node
-# That model->tools->model cycle IS the ReAct loop ("reason" = model step,
-# "act" = tool step). `recursion_limit` bounds it so a confused model spins
-# at most N rounds instead of forever. History is the native message list —
-# HumanMessage / AIMessage(tool_calls) / ToolMessage — persisted across turns
-# untouched, which is what lets follow-ups ("archive it") resolve.
+# That model->tools->model cycle IS the ReAct loop. `recursion_limit`
+# bounds it so a confused model spins at most N rounds instead of forever.
+# History is the native message list, persisted across turns untouched,
+# which is what lets follow-ups ("archive it") resolve.
 #
-# Streaming: we use agent.astream(stream_mode=["messages", "updates"]).
-# "messages" yields (LLM chunk, metadata) token-by-token so the user sees
-# text immediately; "updates" yields per-node full messages so tool calls
-# are announced live and we can rebuild history without a second ainvoke.
-def _text_delta(content) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):  # content blocks: [{"type": "text", ...}]
-        parts = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict):
-                if isinstance(block.get("text"), str):
-                    parts.append(block["text"])
-        return "".join(parts)
-    return ""
-
-
-# While the model is thinking (no tokens yet) a spinner owns the line so the
-# wait doesn't look dead. It stops the moment the first token or tool call
-# arrives; streaming then takes over the same line.
-_SPINNER_FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-
-
-async def _spinner(stop: asyncio.Event) -> None:
-    i = 0
-    while not stop.is_set():
-        print(f"\r{_SPINNER_FRAMES[i % len(_SPINNER_FRAMES)]} Thinking…",
-              end="", flush=True)
-        i += 1
-        try:
-            await asyncio.wait_for(stop.wait(), timeout=0.08)
-        except asyncio.TimeoutError:
-            pass
-    print("\r\x1b[K", end="", flush=True)  # clear the spinner line
+# Streaming: agent.astream(stream_mode=["messages", "updates"]).
+# "messages" yields LLM chunks token-by-token; "updates" yields per-node
+# full messages so tool calls are announced live. Display helpers
+# (spinner, text_delta) live in utils/ — see utils/spinner.py and
+# utils/formatting.py.
 
 
 async def main() -> None:
-    token = get_or_prompt_auth()  # cached JWT; prompts login on first run
+    # Auth first: reuse the saved JWT only if GET /auth/me accepts it,
+    # otherwise loop back to the login/register prompt.
+    token = get_or_prompt_auth()
+    profile = fetch_me(token)
+    while not profile:
+        print("\n⚠️  Session rejected by /auth/me — please log in again.")
+        clear_stored_token()
+        token = get_or_prompt_auth()
+        profile = fetch_me(token)
+    print(f"👤 Signed in as {profile.get('username')}\n")
 
     # The MCP server lives inside the backend at /mcp/sse. Auth rides in the
     # HTTP header, so tools need no credential arguments at all.
@@ -243,29 +221,26 @@ async def main() -> None:
                     *history,
                     HumanMessage(content=user_text),
                 ]
-                stop_spin = asyncio.Event()
-                spin_task = None
                 try:
                     # One graph run = the full reason/act loop for this turn,
                     # streamed: tokens print as they arrive, tool calls are
-                    # announced the moment the model requests them. Until the
-                    # first output lands, a spinner owns the line.
+                    # announced the moment the model requests them. The
+                    # spinner runs until the turn finishes, hiding whenever
+                    # real output prints and reappearing during idle gaps
+                    # (thinking, tool execution).
                     fresh: list = []
                     seen_tool_ids: set = set()
                     started = False
-                    if sys.stdout.isatty():
-                        spin_task = asyncio.create_task(_spinner(stop_spin))
+                    spinner = TurnSpinner(enabled=sys.stdout.isatty())
+                    spinner.start()
 
                     async def begin_output() -> None:
-                        """Stop the spinner (once) and print the prefix."""
-                        nonlocal started, spin_task
+                        """Clear the spinner (if visible) and print the prefix once."""
+                        nonlocal started
+                        await spinner.clear_for_output()
                         if started:
                             return
                         started = True
-                        if spin_task is not None:
-                            stop_spin.set()
-                            await spin_task
-                            spin_task = None
                         print("Assistant: ", end="", flush=True)
 
                     async def announce(tc) -> None:
@@ -275,12 +250,17 @@ async def main() -> None:
                         if key in seen_tool_ids:
                             return
                         seen_tool_ids.add(key)
-                        await begin_output()
+                        await spinner.clear_for_output()
+                        if not started:
+                            await begin_output()
+                        else:
+                            print("", flush=True)
                         print(
-                            f"\n🔧 Calling {tc.get('name')} "
+                            f"🔧 Calling {tc.get('name')} "
                             f"{tc.get('args') or ''}",
                             flush=True,
                         )
+                        spinner.set_label(f"Running {tc.get('name')}…")
 
                     async for mode, data in agent.astream(
                         {"messages": messages},
@@ -289,10 +269,11 @@ async def main() -> None:
                     ):
                         if mode == "messages":
                             chunk, _meta = data
-                            delta = _text_delta(getattr(chunk, "content", ""))
+                            delta = text_delta(getattr(chunk, "content", ""))
                             if delta:
                                 await begin_output()
                                 print(delta, end="", flush=True)
+                                spinner.set_label("Thinking…")
                             for tc in getattr(chunk, "tool_calls", None) or []:
                                 await announce(tc)
                         elif mode == "updates":
@@ -304,15 +285,23 @@ async def main() -> None:
                                     continue
                                 msgs = upd if isinstance(upd, list) else [upd]
                                 for m in msgs:
+                                    # Tool finished -> back to thinking.
+                                    if m.__class__.__name__ == "ToolMessage":
+                                        spinner.set_label("Thinking…")
                                     for tc in getattr(m, "tool_calls", None) or []:
                                         await announce(tc)
                                 fresh.extend(msgs)
-                    await begin_output()  # spinner off even on empty turns
+                    # Turn done: stop the spinner before the final newline so
+                    # no spinner frame leaks into the transcript.
+                    await spinner.stop()
+                    if not started:
+                        print("Assistant: ", end="", flush=True)
                     print("", flush=True)  # end the streamed line
                 except Exception as e:
-                    if spin_task is not None:
-                        stop_spin.set()
-                        await spin_task
+                    try:
+                        await spinner.stop()
+                    except Exception:
+                        pass
                     print(f"\nthat turn failed ({e}). Try rephrasing.\n")
                     continue
 
