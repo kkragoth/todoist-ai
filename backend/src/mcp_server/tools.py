@@ -1,7 +1,7 @@
-"""Todo MCP tools (no presets, user-scoped only).
+"""Todo MCP tools (user-scoped only).
 
 Thin wrappers over todo.service — the same functions the chat agent
-calls in-process. No range_preset / target_date filters for now.
+calls in-process.
 """
 
 from fastmcp.dependencies import CurrentHeaders
@@ -15,21 +15,77 @@ from todo import service as todo_service
 def list_todos(
     completed: bool | None = None,
     include_archived: bool = False,
+    query: str | None = None,
+    target_date: str | None = None,
+    overdue: bool = False,
     headers: dict = CurrentHeaders(),
 ) -> str:
     """List todo tasks for the authenticated user.
 
     Args:
-        completed: False = unfinished only, True = completed only, leave out = all.
+        completed: Leave out for normal listings (returns all with open/done
+            counts). False = unfinished only, True = completed only.
         include_archived: True also shows archived tasks. Default False (hidden).
+        query: Fuzzy name filter, e.g. 'milk' matches 'buy milk'.
+            Combine with target_date when a task name plus a day is given.
+        target_date: One day as YYYY-MM-DD (e.g. today). Omit for all dates.
+        overdue: True = only past-due open tasks.
     """
     try:
         user = resolve_user_from_headers(headers)
     except ValueError as e:
         return f"Error: {e}"
     return todo_service.list_todos(
-        user.id, completed=completed, include_archived=include_archived
+        user.id,
+        completed=completed,
+        include_archived=include_archived,
+        query=query,
+        target_date=target_date,
+        overdue=overdue,
     )
+
+
+@mcp.tool()
+def list_todos_structured(
+    completed: bool | None = None,
+    include_archived: bool = False,
+    query: str | None = None,
+    target_date: str | None = None,
+    overdue: bool = False,
+    headers: dict = CurrentHeaders(),
+) -> dict:
+    """List todo tasks as typed JSON for programs (not chat text).
+
+    Same filters as list_todos. Returns
+    {"open": int, "done": int, "todos": [{id, task, completed, archived,
+    user_id, todo_date, created_at}]}. Prefer this when rendering UI —
+    use list_todos only when echoing sentences.
+
+    Args:
+        completed: Leave out for normal listings (returns all with open/done
+            counts). False = unfinished only, True = completed only.
+        include_archived: True also shows archived tasks. Default False (hidden).
+        query: Fuzzy name filter, e.g. 'milk' matches 'buy milk'.
+            Combine with target_date when a task name plus a day is given.
+        target_date: One day as YYYY-MM-DD (e.g. today). Omit for all dates.
+        overdue: True = only past-due open tasks.
+    """
+    try:
+        user = resolve_user_from_headers(headers)
+    except ValueError as e:
+        return {"error": str(e), "open": 0, "done": 0, "todos": []}
+    try:
+        todos = todo_service.query_todos(
+            user.id,
+            completed=completed,
+            include_archived=include_archived,
+            query=query,
+            target_date=target_date,
+            overdue=overdue,
+        )
+    except ValueError as e:
+        return {"error": str(e), "open": 0, "done": 0, "todos": []}
+    return todo_service.to_todo_list_out(todos).model_dump(mode="json")
 
 
 @mcp.tool()
