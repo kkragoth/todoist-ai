@@ -90,14 +90,20 @@ export function hidesDueChip(bucket: TodoBucket): boolean {
     }
 }
 
-/** Stable sort: date ASC (dateless last), then created_at ASC, then id ASC. */
-export function sortTodos(todos: Todo[]): Todo[] {
+export enum SortDirection {
+    Asc = "asc",
+    Desc = "desc",
+}
+
+/** Stable sort: date ASC/DESC (dateless last), then created_at ASC, then id ASC. */
+export function sortTodos(todos: Todo[], direction: SortDirection = SortDirection.Asc): Todo[] {
+    const sign = direction === SortDirection.Desc ? -1 : 1;
     return [...todos].sort((a, b) => {
         if (a.todo_date !== b.todo_date) {
             if (!a.todo_date) return 1;
             if (!b.todo_date) return -1;
-            if (a.todo_date < b.todo_date) return -1;
-            if (a.todo_date > b.todo_date) return 1;
+            if (a.todo_date < b.todo_date) return -1 * sign;
+            if (a.todo_date > b.todo_date) return 1 * sign;
         }
         if (a.created_at !== b.created_at) return a.created_at < b.created_at ? -1 : 1;
         return a.id - b.id;
@@ -115,6 +121,75 @@ export function groupTodos(todos: Todo[], today: string = todayISO()): BucketGro
         bucket,
         items: sorted.filter((todo) => bucketOf(todo.todo_date, today) === bucket),
     })).filter((group) => group.items.length > 0);
+}
+
+export interface DayGroup {
+    /** ISO date, or null for dateless todos trailing the Later bucket. */
+    date: string | null;
+    items: Todo[];
+}
+
+export interface BucketWithDays {
+    bucket: TodoBucket;
+    /** Used by Overdue / Today / Tomorrow (atomic buckets). Empty for Week / Later. */
+    items: Todo[];
+    /** Used by Week / Later (split per exact date). Empty for atomic buckets. */
+    days: DayGroup[];
+}
+
+function isSplitByDayBucket(bucket: TodoBucket): boolean {
+    switch (bucket) {
+        case TodoBucket.ThisWeek:
+        case TodoBucket.Later:
+            return true;
+        case TodoBucket.Overdue:
+        case TodoBucket.Today:
+        case TodoBucket.Tomorrow:
+            return false;
+    }
+}
+
+function groupByExactDate(items: Todo[]): DayGroup[] {
+    const byDate = new Map<string | null, Todo[]>();
+    for (const todo of items) {
+        const key = todo.todo_date ?? null;
+        const existing = byDate.get(key);
+        if (existing) {
+            existing.push(todo);
+        } else {
+            byDate.set(key, [todo]);
+        }
+    }
+    return [...byDate.entries()]
+        .sort(([a], [b]) => {
+            if (a === b) return 0;
+            if (a === null) return 1;
+            if (b === null) return -1;
+            return a < b ? -1 : 1;
+        })
+        .map(([date, dayItems]) => ({ date, items: dayItems }));
+}
+
+/**
+ * Grouped-by-day view: Overdue / Today / Tomorrow stay atomic, while Week
+ * and Later split into per-exact-date sub-sections (dateless last).
+ */
+export function groupTodosByDay(todos: Todo[], today: string = todayISO()): BucketWithDays[] {
+    const sorted = sortTodos(todos);
+    const groups: BucketWithDays[] = BUCKET_ORDER.map((bucket) => {
+        const bucketItems = sorted.filter((todo) => bucketOf(todo.todo_date, today) === bucket);
+        if (isSplitByDayBucket(bucket)) {
+            return { bucket, items: [], days: groupByExactDate(bucketItems) };
+        }
+        return { bucket, items: bucketItems, days: [] };
+    });
+    return groups.filter((group) => group.items.length > 0 || group.days.length > 0);
+}
+
+export function dayGroupLabel(date: string | null): string {
+    if (!date) return "No date";
+    const dt = new Date(`${date}T00:00:00Z`);
+    return dt.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short", timeZone: "UTC" });
 }
 
 export enum DueTone {

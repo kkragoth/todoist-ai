@@ -1,10 +1,9 @@
 import { Link, Outlet, createRootRoute } from "@tanstack/react-router";
 import { AskAssistantButton, AssistantDrawer } from "@/components/assistant-drawer";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 import { useAuth } from "@/lib/auth";
-import { DEFAULT_SEARCH } from "@/lib/todos-filters";
 
 export const Route = createRootRoute({
     component: RootLayout,
@@ -21,17 +20,8 @@ function RootLayout() {
                         <Link to="/" className="text-[13px] font-semibold tracking-tight">
                             Todoist AI
                         </Link>
-                        {!isLoading && isAuthenticated && (
-                            <Link
-                                to="/todos"
-                                search={DEFAULT_SEARCH}
-                                className="text-[13px] text-muted-foreground hover:text-foreground"
-                            >
-                                Todos
-                            </Link>
-                        )}
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-3">
                         {!isLoading && isAuthenticated && <AskAssistantButton />}
                         <ThemeToggle />
                         {!isLoading && isAuthenticated && <UserMenu />}

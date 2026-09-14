@@ -25,8 +25,9 @@ export interface TodosSearchParams {
     status: TodoStatus;
     archived: boolean;
     date_preset: DatePreset;
-    start_date: string;
-    end_date: string;
+    /** Only meaningful when `date_preset` is Custom; omitted from the URL otherwise. */
+    start_date?: string;
+    end_date?: string;
 }
 
 export const DEFAULT_SEARCH: TodosSearchParams = {
@@ -91,13 +92,22 @@ export function parseISODateParam(value: unknown): string {
 }
 
 export function parseSearch(raw: Record<string, unknown>): TodosSearchParams {
-    return {
+    const date_preset = parseDatePreset(raw["date_preset"]);
+    const base = {
         status: parseTodoStatus(raw["status"]),
         archived: parseArchived(raw["archived"]),
-        date_preset: parseDatePreset(raw["date_preset"]),
-        start_date: parseISODateParam(raw["start_date"]),
-        end_date: parseISODateParam(raw["end_date"]),
+        date_preset,
     };
+    switch (date_preset) {
+        case DatePreset.Custom:
+            return {
+                ...base,
+                start_date: parseISODateParam(raw["start_date"]),
+                end_date: parseISODateParam(raw["end_date"]),
+            };
+        default:
+            return base;
+    }
 }
 
 export function isOpenStatus(status: TodoStatus): boolean {
@@ -222,11 +232,37 @@ export function todosQueryKey(search: TodosSearchParams, today: string = todayIS
         search.status,
         search.archived,
         search.date_preset,
-        search.start_date,
-        search.end_date,
+        search.start_date ?? "",
+        search.end_date ?? "",
         query.targetDate ?? "",
         query.dateFrom ?? "",
         query.dateTo ?? "",
         query.completed ?? "all",
     ];
+}
+
+/** Prefill for the Custom preset: today → one month out. */
+export function defaultCustomDateRange(today: string = todayISO()): { start_date: string; end_date: string } {
+    return { start_date: today, end_date: shiftISO(today, 30) };
+}
+
+/**
+ * Drop start/end dates unless the Custom preset is active, so the URL stays
+ * clean (`?date_preset=today` instead of `?date_preset=today&start_date=&end_date=`).
+ * Keys are deleted (not just emptied) because the router re-runs
+ * `validateSearch` when building the href, which would otherwise fill
+ * defaults back in.
+ */
+export function stripDatesUnlessCustom(search: TodosSearchParams): TodosSearchParams {
+    const next: TodosSearchParams = { ...search };
+    switch (next.date_preset) {
+        case DatePreset.Custom:
+            if (!next.start_date) delete next.start_date;
+            if (!next.end_date) delete next.end_date;
+            return next;
+        default:
+            delete next.start_date;
+            delete next.end_date;
+            return next;
+    }
 }

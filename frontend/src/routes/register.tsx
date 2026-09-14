@@ -3,7 +3,7 @@ import { Link, Navigate, createFileRoute, useNavigate } from "@tanstack/react-ro
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { DEFAULT_SEARCH } from "@/lib/todos-filters";
+import { DEFAULT_SEARCH, stripDatesUnlessCustom } from "@/lib/todos-filters";
 
 export const Route = createFileRoute("/register")({
     component: RegisterPage,
@@ -21,7 +21,7 @@ function RegisterPage() {
         return <p className="text-sm text-muted-foreground">Checking session…</p>;
     }
     if (isAuthenticated) {
-        return <Navigate to="/todos" search={DEFAULT_SEARCH} />;
+        return <Navigate to="/todos" search={stripDatesUnlessCustom(DEFAULT_SEARCH)} />;
     }
 
     async function onSubmit(e: React.FormEvent) {
@@ -30,7 +30,7 @@ function RegisterPage() {
         setPending(true);
         try {
             await register(username.trim(), password);
-            navigate({ to: "/todos", search: DEFAULT_SEARCH });
+            navigate({ to: "/todos", search: stripDatesUnlessCustom(DEFAULT_SEARCH) });
         } catch (err) {
             setError(err instanceof ApiError ? err.message : "Registration failed");
         } finally {

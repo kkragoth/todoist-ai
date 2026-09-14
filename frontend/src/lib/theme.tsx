@@ -28,6 +28,10 @@ function applyTheme(theme: Theme) {
     document.documentElement.style.colorScheme = theme;
 }
 
+export function isDarkTheme(theme: Theme): boolean {
+    return theme === "dark";
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const [theme, setThemeState] = useState<Theme>(getInitialTheme);
 

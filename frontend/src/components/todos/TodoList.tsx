@@ -5,25 +5,65 @@ import { ChevronRight } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { TodoRow } from "@/components/todos/TodoRow";
-import { TodosHeader } from "@/components/todos/TodosHeader";
+import { TodoBucketSection } from "@/components/todos/TodoBucketSection";
+import { TodoDayBucketSection } from "@/components/todos/TodoDayBucketSection";
 import { ApiError } from "@/lib/api";
 import { useTodosQuery } from "@/hooks/useTodos";
-import { TodoBucket, bucketLabel, groupTodos, sortTodos } from "@/lib/todo-buckets";
+import { groupTodos, groupTodosByDay, sortTodos, type BucketGroup, type BucketWithDays } from "@/lib/todo-buckets";
 import { filterTodosFuzzy } from "@/lib/todo-search";
 import { isDoneStatus, isOpenStatus, todayISO } from "@/lib/todos-filters";
+import { isGroupedByDayView, isListView, toSortDirection } from "@/lib/todos-view";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
-function bucketDot(bucket: TodoBucket): string {
-    switch (bucket) {
-        case TodoBucket.Overdue:
-            return "bg-red-500";
-        case TodoBucket.Today:
-            return "bg-amber-500";
-        case TodoBucket.Tomorrow:
-        case TodoBucket.ThisWeek:
-        case TodoBucket.Later:
-            return "bg-muted-foreground/50";
+/** In grouped views done todos render inline at the end of their own bucket. */
+function mergeBucketGroups(open: BucketGroup[], done: BucketGroup[]): BucketGroup[] {
+    const doneByBucket = new Map(done.map((group) => [group.bucket, group.items]));
+    const merged = open.map((group) => ({
+        bucket: group.bucket,
+        items: [...group.items, ...(doneByBucket.get(group.bucket) ?? [])],
+    }));
+    const openBuckets = new Set(open.map((group) => group.bucket));
+    for (const group of done) {
+        if (!openBuckets.has(group.bucket)) {
+            merged.push(group);
+        }
     }
+    return merged;
+}
+
+/** Same inline-done merge for the by-day view (week/later split per date). */
+function mergeDayGroups(open: BucketWithDays[], done: BucketWithDays[]): BucketWithDays[] {
+    const doneByBucket = new Map(done.map((group) => [group.bucket, group]));
+    const merged: BucketWithDays[] = open.map((group) => {
+        const match = doneByBucket.get(group.bucket);
+        if (!match) return group;
+        if (group.days.length > 0 || match.days.length > 0) {
+            const byDate = new Map<string | null, BucketWithDays["days"][number]>();
+            for (const day of [...group.days, ...match.days]) {
+                const existing = byDate.get(day.date);
+                if (existing) {
+                    existing.items.push(...day.items);
+                } else {
+                    byDate.set(day.date, { date: day.date, items: [...day.items] });
+                }
+            }
+            const days = [...byDate.values()].sort((a, b) => {
+                if (a.date === b.date) return 0;
+                if (a.date === null) return 1;
+                if (b.date === null) return -1;
+                return a.date < b.date ? -1 : 1;
+            });
+            return { bucket: group.bucket, items: [], days };
+        }
+        return { bucket: group.bucket, items: [...group.items, ...match.items], days: [] };
+    });
+    const openBuckets = new Set(open.map((group) => group.bucket));
+    for (const group of done) {
+        if (!openBuckets.has(group.bucket)) {
+            merged.push(group);
+        }
+    }
+    return merged;
 }
 
 export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: boolean; authChecked: boolean }) {
@@ -33,6 +73,8 @@ export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: bo
     const flashIds = useTodosUiStore((s) => s.flashIds);
     const doneExpanded = useTodosUiStore((s) => s.doneExpanded);
     const setDoneExpanded = useTodosUiStore((s) => s.setDoneExpanded);
+    const view = useTodosUiStore((s) => s.view);
+    const listSort = useTodosUiStore((s) => s.listSort);
     const today = todayISO();
 
     const filtered = useMemo(() => {
@@ -40,24 +82,33 @@ export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: bo
         return filterTodosFuzzy(todos, searchText);
     }, [todosQuery.data, searchText]);
 
-    const openGroups = useMemo(
-        () =>
-            groupTodos(
-                filtered.filter((todo) => !todo.completed),
-                today,
-            ),
-        [filtered, today],
-    );
+    const openTodos = useMemo(() => filtered.filter((todo) => !todo.completed), [filtered]);
+    const direction = toSortDirection(listSort);
+
+    const flatOpen = useMemo(() => sortTodos(openTodos, direction), [openTodos, direction]);
     const doneTodos = useMemo(() => sortTodos(filtered.filter((todo) => todo.completed)), [filtered]);
-    const openCount = useMemo(() => openGroups.reduce((n, group) => n + group.items.length, 0), [openGroups]);
+    const openGroups = useMemo(() => {
+        const open = groupTodos(openTodos, today);
+        if (isListView(view)) return open;
+        return mergeBucketGroups(open, groupTodos(doneTodos, today));
+    }, [openTodos, doneTodos, today, view]);
+    const openGroupsByDay = useMemo(() => {
+        const open = groupTodosByDay(openTodos, today);
+        if (isListView(view)) return open;
+        return mergeDayGroups(open, groupTodosByDay(doneTodos, today));
+    }, [openTodos, doneTodos, today, view]);
+    const openCount = openTodos.length;
 
     const showOpen = !isDoneStatus(search.status);
-    const showDoneSection = !isOpenStatus(search.status);
+    const showList = isListView(view);
+    const showByDay = isGroupedByDayView(view);
+    // Grouped views render done inline inside each bucket; only the flat list
+    // keeps a separate Done section.
+    const showDoneSection = !isOpenStatus(search.status) && showList;
     const showDoneFlat = isDoneStatus(search.status) || searchText.trim() !== "";
 
     return (
         <div className="mt-4">
-            <TodosHeader todos={filtered} />
             {searchText.trim() && todosQuery.isSuccess && (
                 <p className="mt-1 text-xs text-muted-foreground">
                     {filtered.length} match{filtered.length === 1 ? "" : "es"} for “{searchText.trim()}”
@@ -77,30 +128,31 @@ export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: bo
                     Nothing here. Add your first todo above.
                 </p>
             )}
-            {showOpen &&
+            {showOpen && showList && flatOpen.length > 0 && (
+                <section className="mt-5">
+                    <motion.ul layout className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+                        <AnimatePresence initial={false}>
+                            {flatOpen.map((todo) => (
+                                <TodoRow key={todo.id} todo={todo} flash={flashIds.includes(todo.id)} bucket={null} />
+                            ))}
+                        </AnimatePresence>
+                    </motion.ul>
+                </section>
+            )}
+            {!showList &&
+                !showByDay &&
                 openGroups.map((group) => (
-                    <section key={group.bucket} className="mt-5">
-                        <div className="mb-2 flex items-center gap-2 pl-0.5">
-                            <span className={cn("size-1.5 rounded-full", bucketDot(group.bucket))} />
-                            <span className="text-xs font-semibold text-muted-foreground">
-                                {bucketLabel(group.bucket)}
-                            </span>
-                            <span className="text-xs text-muted-foreground/60">{group.items.length}</span>
-                        </div>
-                        <motion.ul layout className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-                            <AnimatePresence initial={false}>
-                                {group.items.map((todo) => (
-                                    <TodoRow
-                                        key={todo.id}
-                                        todo={todo}
-                                        flash={flashIds.includes(todo.id)}
-                                        bucket={group.bucket}
-                                    />
-                                ))}
-                            </AnimatePresence>
-                        </motion.ul>
-                    </section>
+                    <TodoBucketSection key={group.bucket} bucket={group.bucket} items={group.items} />
                 ))}
+            {!showList &&
+                showByDay &&
+                openGroupsByDay.map((group) =>
+                    group.days.length > 0 ? (
+                        <TodoDayBucketSection key={group.bucket} bucket={group.bucket} days={group.days} />
+                    ) : (
+                        <TodoBucketSection key={group.bucket} bucket={group.bucket} items={group.items} />
+                    ),
+                )}
             {showOpen && openCount === 0 && todosQuery.isSuccess && filtered.length > 0 && (
                 <p className="mt-4 pl-0.5 text-sm text-muted-foreground">
                     Nothing open in this view — add something above, or clear the filters.

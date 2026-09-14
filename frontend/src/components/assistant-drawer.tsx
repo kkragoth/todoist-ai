@@ -147,7 +147,7 @@ export function AssistantDrawer() {
 export function AskAssistantButton() {
     const setOpen = useTodosUiStore((s) => s.setAssistantOpen);
     return (
-        <Button variant="outline" size="xs" className="bg-card" onClick={() => setOpen(true)}>
+        <Button size="sm" onClick={() => setOpen(true)}>
             <Sparkles />
             Ask assistant
         </Button>

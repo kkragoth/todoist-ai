@@ -1,7 +1,7 @@
 import { Link, Navigate, createFileRoute } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
-import { DEFAULT_SEARCH } from "@/lib/todos-filters";
+import { DEFAULT_SEARCH, stripDatesUnlessCustom } from "@/lib/todos-filters";
 
 export const Route = createFileRoute("/")({
     component: LandingPage,
@@ -11,7 +11,7 @@ function LandingPage() {
     const { isAuthenticated, isLoading } = useAuth();
 
     if (isLoading) return <p className="text-sm text-muted-foreground">Checking session…</p>;
-    if (isAuthenticated) return <Navigate to="/todos" search={DEFAULT_SEARCH} />;
+    if (isAuthenticated) return <Navigate to="/todos" search={stripDatesUnlessCustom(DEFAULT_SEARCH)} />;
 
     return (
         <div className="mx-auto w-full max-w-xl py-8 text-center">

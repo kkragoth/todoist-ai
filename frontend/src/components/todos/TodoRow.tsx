@@ -7,6 +7,7 @@ import { useArchiveTodo, usePatchTodo, useUnarchiveTodo } from "@/hooks/useTodos
 import type { Todo } from "@/lib/api";
 import { TodoBucket, dueToneOf, hidesDueChip, isOverdueTone, isTodayTone, relativeDueLabel } from "@/lib/todo-buckets";
 import { todayISO } from "@/lib/todos-filters";
+import { isCompactDensity } from "@/lib/todos-view";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
 function dueChipClass(dateISO: string, today: string): string {
@@ -38,6 +39,8 @@ export function TodoRow({ todo, flash, bucket }: { todo: Todo; flash: boolean; b
     const markCompleting = useTodosUiStore((s) => s.markCompleting);
     const unmarkCompleting = useTodosUiStore((s) => s.unmarkCompleting);
     const [pickingDate, setPickingDate] = useState(false);
+    const density = useTodosUiStore((s) => s.density);
+    const compact = isCompactDensity(density);
     const today = todayISO();
 
     const isCompleting = completingIds.includes(todo.id);
@@ -72,7 +75,8 @@ export function TodoRow({ todo, flash, bucket }: { todo: Todo; flash: boolean; b
             exit={isDone ? { opacity: 0, x: 48 } : { opacity: 0, x: 24 }}
             transition={{ duration: 0.25 }}
             className={cn(
-                "group flex min-h-[52px] items-center gap-3 border-b border-border/50 px-4 py-2 last:border-b-0 hover:bg-muted/50",
+                "group flex items-center gap-3 border-b border-border/50 last:border-b-0 hover:bg-muted/50",
+                compact ? "min-h-[40px] px-3 py-1" : "min-h-[52px] px-4 py-2",
                 todo.archived && "opacity-60",
                 flash && "todo-sse-flash",
             )}

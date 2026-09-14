@@ -3,7 +3,7 @@ import { Link, Navigate, createFileRoute, useNavigate, useSearch } from "@tansta
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { DEFAULT_SEARCH } from "@/lib/todos-filters";
+import { DEFAULT_SEARCH, stripDatesUnlessCustom } from "@/lib/todos-filters";
 
 export const Route = createFileRoute("/login")({
     validateSearch: (search: Record<string, unknown>): { redirect?: string } => ({
@@ -25,7 +25,7 @@ function LoginPage() {
         return <p className="text-sm text-muted-foreground">Checking session…</p>;
     }
     if (isAuthenticated) {
-        return <Navigate to="/todos" search={DEFAULT_SEARCH} />;
+        return <Navigate to="/todos" search={stripDatesUnlessCustom(DEFAULT_SEARCH)} />;
     }
 
     async function onSubmit(e: React.FormEvent) {

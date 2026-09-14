@@ -28,7 +28,7 @@ export function UserMenu() {
                 aria-label="User menu"
             >
                 <Avatar size="sm" className="cursor-pointer">
-                    <AvatarFallback>{initials(username)}</AvatarFallback>
+                    <AvatarFallback className="bg-muted text-muted-foreground">{initials(username)}</AvatarFallback>
                 </Avatar>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" sideOffset={8} className="w-48">

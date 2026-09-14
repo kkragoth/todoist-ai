@@ -19,7 +19,7 @@ function snapshotTodos(queryClient: ReturnType<typeof useQueryClient>): Map<numb
  * Live-updates the todo list: opens the backend SSE stream and invalidates
  * the ["todos"] queries whenever anything (CLI, another tab, this tab)
  * changes a todo. React Query then refetches with the active filters.
- * New or changed rows get a rainbow entry flash via the todos UI store.
+ * New or changed rows get a border-pulse entry flash via the todos UI store.
  * EventSource reconnects by itself if the connection drops.
  */
 export function useTodosEvents(enabled: boolean) {

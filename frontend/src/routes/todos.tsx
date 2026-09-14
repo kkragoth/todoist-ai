@@ -2,15 +2,14 @@ import { Navigate, createFileRoute } from "@tanstack/react-router";
 import { TodoCreateForm } from "@/components/todos/TodoCreateForm";
 import { TodoList } from "@/components/todos/TodoList";
 import { TodosFilters } from "@/components/todos/TodosFilters";
+import { TodosViewControls } from "@/components/todos/TodosViewControls";
 import { useAuth } from "@/lib/auth";
-import { DEFAULT_SEARCH, parseSearch } from "@/lib/todos-filters";
+import { DEFAULT_SEARCH, parseSearch, stripDatesUnlessCustom } from "@/lib/todos-filters";
 import { useTodosEvents } from "@/lib/useTodosEvents";
 
 export const Route = createFileRoute("/todos")({
-    validateSearch: (search: Record<string, unknown>) => ({
-        ...DEFAULT_SEARCH,
-        ...parseSearch(search),
-    }),
+    validateSearch: (search: Record<string, unknown>) =>
+        stripDatesUnlessCustom({ ...DEFAULT_SEARCH, ...parseSearch(search) }),
     component: TodosPage,
 });
 
@@ -25,6 +24,7 @@ function TodosPage() {
         <div>
             <TodoCreateForm />
             <TodosFilters />
+            <TodosViewControls />
             <TodoList isAuthenticated={isAuthenticated} authChecked={!isLoading} />
         </div>
     );
