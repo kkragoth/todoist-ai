@@ -70,6 +70,7 @@ export function TodoRow({ todo, flash, bucket }: { todo: Todo; flash: boolean; b
     return (
         <motion.li
             layout
+            data-todo-id={todo.id}
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={isDone ? { opacity: 0, x: 48 } : { opacity: 0, x: 24 }}

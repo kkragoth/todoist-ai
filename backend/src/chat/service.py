@@ -16,7 +16,11 @@ Yields event dicts (JSON-serializable, SSE-framed by router.py):
   {"type": "token", "content": "..."}
   {"type": "tool_call", "tool": ..., "args": {...}}
   {"type": "tool_result", "tool": ..., "output": "..."}
+  {"type": "ui_data", "widget": "todo_list", "open": ..., "done": ...,
+   "total": ..., "truncated": ..., "todos": [...]}
   {"type": "ask_user", "question": "...", "options": [...]}
+  {"type": "ui_suggestions", "suggestions": ["...", ...]}
+  {"type": "ui_action", "action": ..., "args": {...}}
   {"type": "done"}
   {"type": "error", "message": "..."}
 
@@ -24,6 +28,13 @@ ask_user is terminal: the first ask_user tool call is surfaced as an
 ask_user event (not a generic tool_call) and ends the turn after its
 ToolMessage lands in history, so the user's next message continues with
 full context. Extra ask_user calls in the same turn are ignored.
+
+ui_action is NON-terminal (unlike ask_user): UI-only tools
+(set_todos_filter/set_todos_view/highlight_todos, gated by the
+"ui_action" capability) emit ui_action on first sight and the loop
+continues so the model can e.g. filter then narrate. Their ToolMessages
+stay in history but never surface as tool_result noise. CLI clients
+omit the capability and never see these tools or events.
 """
 
 import asyncio
@@ -43,6 +54,87 @@ from .tools import build_tools_for_user
 logger = logging.getLogger(__name__)
 
 ASK_USER_TOOL = "ask_user"
+SUGGEST_TOOL = "suggest_followups"
+
+# Max chips per turn / chars per chip for `ui_suggestions`.
+MAX_SUGGESTIONS = 4
+MAX_SUGGESTION_CHARS = 40
+
+
+def clean_suggestions(raw) -> list[str]:
+    """Clean suggest_followups args into chip labels. Mirrors the frontend
+    caps in `chat.ts` so both ends agree on max 4 chips of 40 chars."""
+    items = raw if isinstance(raw, list) else []
+    return [
+        str(s).strip()[:MAX_SUGGESTION_CHARS]
+        for s in items
+        if str(s).strip()
+    ][:MAX_SUGGESTIONS]
+
+# UI-only tools (no DB work) -> client-local `ui_action` events.
+# Mapping: tool name -> ui_action `action` name sent over SSE.
+UI_ACTION_TOOLS = {
+    "set_todos_filter": "set_filter",
+    "set_todos_view": "set_view",
+    "highlight_todos": "highlight",
+}
+
+# Max widget rows per `ui_data` event. Counts always cover the full set.
+UI_DATA_MAX_ROWS = 30
+
+
+def build_ui_data_event(artifact) -> dict | None:
+    """Build a `ui_data` todo_list widget from a list_todos artifact.
+
+    None when there is nothing worth rendering (empty/error results carry
+    no artifact). Counts cover the full result set even when rows are
+    truncated, so the client can print "showing 30 of 47".
+    """
+    if not isinstance(artifact, dict):
+        return None
+    todos = artifact.get("todos")
+    if not todos:
+        return None
+    rows = todos[:UI_DATA_MAX_ROWS]
+    return {
+        "type": "ui_data",
+        "widget": "todo_list",
+        "open": artifact.get("open", 0),
+        "done": artifact.get("done", 0),
+        "total": len(todos),
+        "truncated": len(todos) > len(rows),
+        "todos": rows,
+    }
+
+
+def strip_artifacts(messages: list) -> list:
+    """Drop ToolMessage artifacts before history persistence.
+
+    Artifacts are live-turn side channels (full widget row sets) — storing
+    them would bloat every history row in postgres. Content is untouched,
+    so next-turn context is identical.
+    """
+    stripped = []
+    for m in messages:
+        if m.__class__.__name__ == "ToolMessage" and getattr(m, "artifact", None) is not None:
+            stripped.append(m.model_copy(update={"artifact": None}))
+        else:
+            stripped.append(m)
+    return stripped
+
+
+def format_ui_context(ui_state) -> str | None:
+    """Render opaque client view state for the prompt. Never trusts enums —
+    the client re-validates everything before applying."""
+    if not isinstance(ui_state, dict) or not ui_state:
+        return None
+    parts = []
+    for key in ("status", "date_preset", "start_date", "end_date", "archived", "view", "sort", "density"):
+        value = ui_state.get(key)
+        if value is None or value == "":
+            continue
+        parts.append(f"{key}={value}")
+    return ", ".join(parts) or None
 
 
 def normalize_ask(args) -> dict | None:
@@ -133,9 +225,15 @@ async def run_turn(
     thread_id: int | str | None = None,
     provider: str | None = None,
     model: str | None = None,
+    client=None,
     is_disconnected=None,
 ) -> AsyncGenerator[dict, None]:
-    """Run one full reason/act loop for this turn, yielding event dicts."""
+    """Run one full reason/act loop for this turn, yielding event dicts.
+
+    `client` is the optional ChatRequest.client (BaseModel or dict) with
+    kind/capabilities/ui_state. Only clients advertising `"ui_action"` get
+    the UI tools and their `ui_action` events.
+    """
     try:
         llm = make_llm(provider=provider, model=model)
         active_provider, active_model = config.resolve_provider_and_model(
@@ -145,13 +243,27 @@ async def run_turn(
         yield {"type": "error", "message": str(e)}
         return
 
-    tools = build_tools_for_user(user_id)
+    if isinstance(client, dict):
+        capabilities = list(client.get("capabilities") or [])
+        ui_state = client.get("ui_state")
+    elif client is not None:
+        capabilities = list(getattr(client, "capabilities", None) or [])
+        ui_state = getattr(client, "ui_state", None)
+    else:
+        capabilities = []
+        ui_state = None
+
+    tools = build_tools_for_user(user_id, capabilities)
     agent = create_agent(model=llm, tools=tools)
 
     stored = await history.get_history(user_id, thread_id)
     user_message = HumanMessage(content=user_text)
     messages = [
-        system_prompt(datetime.now().strftime("%Y-%m-%d")),
+        system_prompt(
+            datetime.now().strftime("%Y-%m-%d"),
+            ui_context=format_ui_context(ui_state),
+            has_ui_tools="ui_action" in capabilities,
+        ),
         *stored,
         user_message,
     ]
@@ -161,6 +273,7 @@ async def run_turn(
     tool_names: dict[str, str] = {}  # tool_call id -> name (for tool_result)
     ask_event: dict | None = None
     ask_call_ids: set = set()
+    ui_call_ids: set = set()
     ask_done = False
     prefix_stripper = AnswerPrefixStripper()
 
@@ -218,11 +331,60 @@ async def run_turn(
         )
         return event
 
+    def check_ui_action(tc) -> dict | None:
+        """Route one UI-only call to its event. Non-terminal: the loop keeps
+        going so the model narrates after driving the view. The call id is
+        recorded so its ack ToolMessage stays in history but never surfaces
+        as tool_result noise."""
+        name, args, call_id = call_parts(tc)
+        if name not in UI_ACTION_TOOLS:
+            return None
+        key = call_id or (name, str(args or ""))
+        if key in seen_tool_ids:
+            return None
+        seen_tool_ids.add(key)
+        if call_id and name:
+            tool_names[call_id] = name
+            ui_call_ids.add(call_id)
+        return {
+            "type": "ui_action",
+            "action": UI_ACTION_TOOLS[name],
+            "args": args or {},
+        }
+
+    def check_suggest(tc) -> dict | None:
+        """Route one suggest_followups call to its event. Non-terminal and
+        idempotent per call: cleaned chips (max 4, max 40 chars each) render
+        as tappable follow-ups. Empty suggestions emit nothing. The call id
+        is recorded so its ack ToolMessage stays in history but never
+        surfaces as tool_result noise."""
+        name, args, call_id = call_parts(tc)
+        if name != SUGGEST_TOOL:
+            return None
+        key = call_id or (name, str(args or ""))
+        if key in seen_tool_ids:
+            return None
+        seen_tool_ids.add(key)
+        if call_id and name:
+            tool_names[call_id] = name
+            ui_call_ids.add(call_id)
+        raw = (args or {}).get("suggestions") if isinstance(args, dict) else []
+        suggestions = clean_suggestions(raw)
+        if not suggestions:
+            return None
+        return {"type": "ui_suggestions", "suggestions": suggestions}
+
     def route_tool_call(tc) -> dict | None:
         """Route one tool call to its SSE event. Ask calls yield ask_user,
+        suggest calls yield ui_suggestions, UI calls yield ui_action,
         everything else a generic tool_call. None means duplicate."""
-        if call_parts(tc)[0] == ASK_USER_TOOL:
+        tool_name = call_parts(tc)[0]
+        if tool_name == ASK_USER_TOOL:
             return check_ask(tc)
+        if tool_name == SUGGEST_TOOL:
+            return check_suggest(tc)
+        if tool_name in UI_ACTION_TOOLS:
+            return check_ui_action(tc)
         return announce_tool_call(tc)
 
     try:
@@ -274,12 +436,22 @@ async def run_turn(
                                     # Client already got the ask_user event;
                                     # keep the message in history, skip the noise.
                                     ask_done = True
+                                elif tool in UI_ACTION_TOOLS or tool_call_id in ui_call_ids:
+                                    # Client already got the ui_action event;
+                                    # the ack stays in history, loop continues.
+                                    pass
                                 else:
                                     yield {
                                         "type": "tool_result",
                                         "tool": tool,
                                         "output": safe_text(getattr(m, "content", "")),
                                     }
+                                    if "ui_action" in capabilities:
+                                        widget = build_ui_data_event(
+                                            getattr(m, "artifact", None)
+                                        )
+                                        if widget is not None:
+                                            yield widget
                             for tc in getattr(m, "tool_calls", None) or []:
                                 event = route_tool_call(tc)
                                 if event is not None:
@@ -292,7 +464,7 @@ async def run_turn(
             await history.append_turn(
                 user_id,
                 thread_id,
-                [user_message, *fresh],
+                [user_message, *strip_artifacts(fresh)],
                 provider=active_provider,
                 model=active_model,
             )

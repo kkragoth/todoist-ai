@@ -1,11 +1,14 @@
 """LangChain tools for the chat agent, bound to one user.
 
-Same four operations as the MCP server, but called in-process via
+Same operations as the MCP server, but called in-process via
 todo.service — no SSE hop. Each tool closes over `user_id`, so the model
 never sees credentials and there is no cross-user leak.
 
-The list tool deliberately returns the TEXT presenter (`format_todos`):
-the consumer is a sentence, not a component. Programs that render UI
+The list tool returns the TEXT presenter (`format_todos_from_out`) as
+content plus the STRUCTUED result (`TodoListOut`, JSON-safe) as artifact
+(`response_format="content_and_artifact"`): the model only sees text,
+while the service forwards the artifact to web clients as a `ui_data`
+widget event. One DB query, two presenters. Programs that render UI
 should use `query_todos` + `TodoListOut` (see `todo/service.py` and the
 MCP `list_todos_structured` tool) instead of parsing chat text.
 
@@ -79,12 +82,73 @@ class AskUserArgs(BaseModel):
     )
 
 
+class SetTodosFilterArgs(BaseModel):
+    status: Optional[str] = Field(
+        default=None, description='One of: all | open | done. Omit to keep the current filter.'
+    )
+    date_preset: Optional[str] = Field(
+        default=None,
+        description="One of: all | overdue | today | tomorrow | week | later | custom. Omit to keep.",
+    )
+    start_date: Optional[str] = Field(
+        default=None, description="YYYY-MM-DD, only meaningful with date_preset=custom."
+    )
+    end_date: Optional[str] = Field(
+        default=None, description="YYYY-MM-DD, only meaningful with date_preset=custom."
+    )
+    archived: Optional[bool] = Field(default=None, description="True shows archived tasks. Omit to keep.")
+
+
+class SetTodosViewArgs(BaseModel):
+    view: Optional[str] = Field(
+        default=None, description="One of: list | grouped | grouped_by_day. Omit to keep."
+    )
+    sort: Optional[str] = Field(default=None, description="One of: asc | desc. Omit to keep.")
+    density: Optional[str] = Field(
+        default=None, description="One of: comfortable | compact. Omit to keep."
+    )
+
+
+class HighlightTodosArgs(BaseModel):
+    ids: list[int] = Field(
+        max_length=20, description="Todo IDs to flash-highlight in the list so the user sees them."
+    )
+
+
+class SuggestFollowupsArgs(BaseModel):
+    suggestions: list[str] = Field(
+        max_length=4,
+        description="2-4 short follow-up actions the user likely wants next, each under 40 chars.",
+    )
+
+
 def drop_nones(kwargs: dict) -> dict:
     return {k: v for k, v in kwargs.items() if v is not None}
 
 
-def build_tools_for_user(user_id: int) -> list[StructuredTool]:
-    """Create the four todo tools closed over `user_id`."""
+def format_web_list_text(out) -> str:
+    """Compact list presenter for web clients. Same facts as the bullet
+    presenter (counts, names, dates, IDs — everything ask_user options and
+    disambiguation need), but framed as data plus an inline directive, so
+    the model narrates instead of echoing rows the widget already shows."""
+    lines = [
+        f"{out.open} open, {out.done} done. These rows render as widgets in the UI "
+        "— reply with one friendly sentence plus key IDs, do NOT re-list rows:"
+    ]
+    for t in out.todos:
+        state = "done" if t.completed else "open"
+        lines.append(f"[{t.id}] {t.task} | {state} | {t.todo_date}")
+    return "\n".join(lines)
+
+
+def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str] = ()) -> list[StructuredTool]:
+    """Create the todo tools closed over `user_id`.
+
+    Data tools are always present. UI-only tools (no DB work — the real
+    effect happens client-side when it applies the `ui_action` event) are
+    only added when `"ui_action"` is in `capabilities`, so CLI clients
+    never see them.
+    """
 
     async def list_todos_tool(
         completed: Optional[bool] = None,
@@ -92,16 +156,33 @@ def build_tools_for_user(user_id: int) -> list[StructuredTool]:
         query: Optional[str] = None,
         target_date: Optional[str] = None,
         overdue: bool = False,
-    ) -> str:
-        kwargs = drop_nones(
-            {"completed": completed, "query": query, "target_date": target_date}
-        )
-        return await asyncio.to_thread(
-            todo_service.list_todos,
-            user_id,
-            include_archived=include_archived,
-            overdue=overdue,
-            **kwargs,
+    ) -> tuple[str, dict | None]:
+        # Single-query pipeline: one DB hit, text content for the model plus
+        # a JSON-safe structured artifact the service forwards as `ui_data`.
+        # Empty/error results carry no artifact, so no widget is rendered.
+        try:
+            rows = await asyncio.to_thread(
+                todo_service.query_todos,
+                user_id,
+                include_archived=include_archived,
+                overdue=overdue,
+                **drop_nones(
+                    {"completed": completed, "query": query, "target_date": target_date}
+                ),
+            )
+        except ValueError as e:
+            return f"Error: {e}", None
+        if not rows:
+            return "No tasks found.", None
+        out = todo_service.to_todo_list_out(rows)
+        if "ui_action" in (capabilities or []):
+            # Web clients render rows as widgets: compact data text with an
+            # inline do-not-relist directive (far harder to ignore than a
+            # system-prompt tail). CLI keeps the echo-verbatim bullets.
+            return format_web_list_text(out), out.model_dump(mode="json")
+        return (
+            todo_service.format_todos_from_out(out),
+            out.model_dump(mode="json"),
         )
 
     async def add_todo_tool(task: str, todo_date: Optional[str] = None) -> str:
@@ -137,23 +218,78 @@ def build_tools_for_user(user_id: int) -> list[StructuredTool]:
             return f"Asked user: {question} Options: {' | '.join(opts)}"
         return f"Asked user: {question}"
 
-    return [
+    async def set_todos_filter_tool(
+        status: Optional[str] = None,
+        date_preset: Optional[str] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        archived: Optional[bool] = None,
+    ) -> str:
+        """UI-only passthrough: no DB work. The service emits a `ui_action`
+        event and the web client applies the filter locally. The string
+        only lands in history so the next turn remembers the view change."""
+        applied = drop_nones(
+            {
+                "status": status,
+                "date_preset": date_preset,
+                "start_date": start_date,
+                "end_date": end_date,
+                "archived": archived,
+            }
+        )
+        return f"Filter change requested (client applies it): {applied or 'no-op'}"
+
+    async def set_todos_view_tool(
+        view: Optional[str] = None,
+        sort: Optional[str] = None,
+        density: Optional[str] = None,
+    ) -> str:
+        """UI-only passthrough for list/grouped/by-day + sort + density."""
+        applied = drop_nones({"view": view, "sort": sort, "density": density})
+        return f"View change requested (client applies it): {applied or 'no-op'}"
+
+    async def highlight_todos_tool(ids: list[int] | None = None) -> str:
+        """UI-only passthrough: the client flash-highlights these IDs."""
+        return f"Highlight requested (client applies it): {ids or []}"
+
+    async def suggest_followups_tool(suggestions: list[str] | None = None) -> str:
+        """UI-only passthrough: the service emits a `ui_suggestions` event
+        and the client renders them as tappable chips. The strings only
+        land in history so the next turn remembers what was offered."""
+        clean = [s.strip() for s in (suggestions or []) if s.strip()][:4]
+        return f"Suggested follow-ups (client renders them): {clean or 'none'}"
+
+    list_description = (
+        "List todo tasks for the authenticated user. "
+        "Normal 'my todos/tasks today': pass target_date=today and leave "
+        "completed UNSET so open+done come back with counts. "
+        "completed=False only for open/remaining/left/unfinished/overdue, "
+        "True only for done/finished/completed. "
+        "query: fuzzy name filter, combine with target_date when the user "
+        "names a task plus a day. "
+    )
+    if "ui_action" in (capabilities or []):
+        # Web rows render as widgets: narrate with counts + key IDs, never
+        # re-list. CLI (below) must echo every bullet, it has no widgets.
+        list_description += (
+            "Result rows render as widgets in the UI: answer with one friendly "
+            "sentence using the counts plus key IDs, never re-list rows. "
+            "A wrong (unfiltered) listing means re-calling with target_date. "
+        )
+    else:
+        list_description += (
+            "Echo EVERY returned bullet to the user, never hide rows; "
+            "a wrong (unfiltered) listing means re-calling with target_date. "
+        )
+    list_description += "include_archived: True also shows archived tasks."
+
+    tools = [
         StructuredTool.from_function(
             coroutine=list_todos_tool,
             name="list_todos",
-            description=(
-                "List todo tasks for the authenticated user. "
-                "Normal 'my todos/tasks today': pass target_date=today and leave "
-                "completed UNSET so open+done come back with counts. "
-                "completed=False only for open/remaining/left/unfinished/overdue, "
-                "True only for done/finished/completed. "
-                "query: fuzzy name filter, combine with target_date when the user "
-                "names a task plus a day. "
-                "Echo EVERY returned bullet to the user, never hide rows; "
-                "a wrong (unfiltered) listing means re-calling with target_date. "
-                "include_archived: True also shows archived tasks."
-            ),
+            description=list_description,
             args_schema=ListTodosArgs,
+            response_format="content_and_artifact",
         ),
         StructuredTool.from_function(
             coroutine=add_todo_tool,
@@ -187,8 +323,61 @@ def build_tools_for_user(user_id: int) -> list[StructuredTool]:
             description=(
                 "Ask the user a clarifying question INSTEAD of acting. Use when "
                 "zero or 2+ tasks match, or a pronoun has no single clear target. "
-                "Terminal: call it alone, with no other tools in the same turn."
+                "Terminal: call it alone, with no other tools in that turn."
             ),
             args_schema=AskUserArgs,
         ),
     ]
+
+    if "ui_action" in (capabilities or []):
+        tools.extend(
+            [
+                StructuredTool.from_function(
+                    coroutine=set_todos_filter_tool,
+                    name="set_todos_filter",
+                    description=(
+                        "Change the web list FILTER (client-local, no DB write). "
+                        "Call when the user asks to show/filter the list "
+                        "(e.g. 'show today', 'only overdue', 'hide archived'). "
+                        "Non-terminal: call it, then narrate the result. "
+                        "The client applies it; never claim rows changed without it."
+                    ),
+                    args_schema=SetTodosFilterArgs,
+                ),
+                StructuredTool.from_function(
+                    coroutine=set_todos_view_tool,
+                    name="set_todos_view",
+                    description=(
+                        "Change the web list VIEW/SORT/DENSITY (client-local). "
+                        "Call for 'group by day', 'flat list', 'compact', "
+                        "'newest first' style requests. Non-terminal: then narrate."
+                    ),
+                    args_schema=SetTodosViewArgs,
+                ),
+                StructuredTool.from_function(
+                    coroutine=highlight_todos_tool,
+                    name="highlight_todos",
+                    description=(
+                        "Flash-highlight todo IDs in the web list so the user "
+                        "sees them (client-local). Call with IDs from listed "
+                        "results after answering 'which ones' style questions. "
+                        "Non-terminal: then narrate."
+                    ),
+                    args_schema=HighlightTodosArgs,
+                ),
+                StructuredTool.from_function(
+                    coroutine=suggest_followups_tool,
+                    name="suggest_followups",
+                    description=(
+                        "Offer 2-4 tappable follow-up chips in the web UI "
+                        "(client-local). Call once per turn after answering, "
+                        "with short actions you can actually do "
+                        "(e.g. 'Show only open', 'Group by day', 'Archive done "
+                        "tasks'). Non-terminal: call it, then finish narrating."
+                    ),
+                    args_schema=SuggestFollowupsArgs,
+                ),
+            ]
+        )
+
+    return tools

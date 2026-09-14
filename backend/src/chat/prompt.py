@@ -56,6 +56,28 @@ STATIC_INSTRUCTIONS = (
 )
 
 
+UI_INSTRUCTIONS = (
+    "You drive a web todo list as well as data: UI tools (set_todos_filter, "
+    "set_todos_view, highlight_todos) change what the user SEES, not the DB. "
+    "They are non-terminal — call them, then narrate the result in the answer. "
+    "Only call a UI tool when the user asks to change the view "
+    "('show today', 'group by day', 'highlight them') or when pointing at "
+    "specific rows helps ('these three'). Never fight the current view: "
+    "the context below tells you what is shown; keep filters stable unless asked.\n"
+    "After answering, you may call suggest_followups once with 2-4 short "
+    "follow-up actions the user likely wants next — only actions you can "
+    "actually do (e.g. 'Show only open', 'Group by day'). They render as "
+    "tappable chips; skip the call when nothing useful suggests itself.\n"
+)
+
+WIDGET_INSTRUCTIONS = (
+    "Listed todos also render as widgets in the web UI: after list_todos, "
+    "give one friendly sentence with the open/done counts from the tool "
+    "result — do NOT echo every bullet, the UI shows the rows. Still name "
+    "the key task IDs so they link. Never recount; use the tool's counts.\n"
+)
+
+
 def DYNAMIC_INSTRUCTIONS(today_str: str) -> str:
     """Dynamic prompt suffix. Takes the date, returns the closing lines.
 
@@ -66,7 +88,11 @@ def DYNAMIC_INSTRUCTIONS(today_str: str) -> str:
     return f"---\nToday is {today_str} ({weekday})."
 
 
-def system_prompt(today_str: str) -> SystemMessage:
-    return SystemMessage(
-        content=f"{STATIC_INSTRUCTIONS}\n{DYNAMIC_INSTRUCTIONS(today_str)}"
-    )
+def system_prompt(today_str: str, ui_context: str | None = None, has_ui_tools: bool = False) -> SystemMessage:
+    """Static block first (prefix-cache stable), date + UI context last."""
+    content = f"{STATIC_INSTRUCTIONS}\n{DYNAMIC_INSTRUCTIONS(today_str)}"
+    if has_ui_tools:
+        content += f"\n{UI_INSTRUCTIONS}{WIDGET_INSTRUCTIONS}"
+    if ui_context:
+        content += f"\nCurrently shown in the web UI: {ui_context}"
+    return SystemMessage(content=content)

@@ -65,6 +65,17 @@ export enum ListSort {
     Desc = "desc",
 }
 
+export function parseListSort(value: unknown): ListSort | null {
+    switch (value) {
+        case ListSort.Asc:
+            return ListSort.Asc;
+        case ListSort.Desc:
+            return ListSort.Desc;
+        default:
+            return null;
+    }
+}
+
 export function sortLabel(sort: ListSort): string {
     switch (sort) {
         case ListSort.Asc:
@@ -104,6 +115,17 @@ export function toSortDirection(sort: ListSort): SortDirection {
 export enum Density {
     Comfortable = "comfortable",
     Compact = "compact",
+}
+
+export function parseDensity(value: unknown): Density | null {
+    switch (value) {
+        case Density.Comfortable:
+            return Density.Comfortable;
+        case Density.Compact:
+            return Density.Compact;
+        default:
+            return null;
+    }
 }
 
 export function densityLabel(density: Density): string {
