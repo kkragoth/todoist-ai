@@ -35,9 +35,7 @@ export function TurnView({ turn, now }: { turn: Turn; now: number }) {
                 label={label}
                 duration={duration}
                 content={working && turn.tools.length === 0 ? "Contacting model…" : toolSummary(turn.tools)}
-                onToggle={
-                    working ? undefined : () => useChatStore.getState().toggleTurnExpanded(turn.id)
-                }
+                onToggle={working ? undefined : () => useChatStore.getState().toggleTurnExpanded(turn.id)}
             />
 
             {showTools &&
