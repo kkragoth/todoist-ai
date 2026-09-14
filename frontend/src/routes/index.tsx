@@ -28,13 +28,13 @@ function LandingPage() {
                 </Link>
             </div>
             <div className="mt-8 grid gap-2 text-left text-sm">
-                <div className="rounded-lg border p-3">
+                <div className="rounded-lg border border-border bg-card p-3">
                     <p className="font-medium">Current todos</p>
                     <p className="text-muted-foreground">
                         Filter by status, archived, and date — all shareable via URL.
                     </p>
                 </div>
-                <div className="rounded-lg border p-3">
+                <div className="rounded-lg border border-border bg-card p-3">
                     <p className="font-medium">Live sync</p>
                     <p className="text-muted-foreground">Edits from the CLI or another tab appear instantly.</p>
                 </div>

@@ -8,9 +8,11 @@ export enum TodoStatus {
 
 export enum DatePreset {
     All = "all",
+    Overdue = "overdue",
     Today = "today",
-    Yesterday = "yesterday",
-    OneWeek = "1week",
+    Tomorrow = "tomorrow",
+    Week = "week",
+    Later = "later",
     Custom = "custom",
 }
 
@@ -50,12 +52,16 @@ export function parseTodoStatus(value: unknown): TodoStatus {
 
 export function parseDatePreset(value: unknown): DatePreset {
     switch (value) {
+        case DatePreset.Overdue:
+            return DatePreset.Overdue;
         case DatePreset.Today:
             return DatePreset.Today;
-        case DatePreset.Yesterday:
-            return DatePreset.Yesterday;
-        case DatePreset.OneWeek:
-            return DatePreset.OneWeek;
+        case DatePreset.Tomorrow:
+            return DatePreset.Tomorrow;
+        case DatePreset.Week:
+            return DatePreset.Week;
+        case DatePreset.Later:
+            return DatePreset.Later;
         case DatePreset.Custom:
             return DatePreset.Custom;
         case DatePreset.All:
@@ -129,12 +135,16 @@ export function datePresetLabel(preset: DatePreset): string {
     switch (preset) {
         case DatePreset.All:
             return "All dates";
+        case DatePreset.Overdue:
+            return "Overdue";
         case DatePreset.Today:
             return "Today";
-        case DatePreset.Yesterday:
-            return "Yesterday";
-        case DatePreset.OneWeek:
-            return "Last 7 days";
+        case DatePreset.Tomorrow:
+            return "Tomorrow";
+        case DatePreset.Week:
+            return "This week";
+        case DatePreset.Later:
+            return "Later";
         case DatePreset.Custom:
             return "Custom";
     }
@@ -175,12 +185,16 @@ export function resolveDateRange(search: TodosSearchParams, today: string = toda
     switch (search.date_preset) {
         case DatePreset.All:
             return {};
+        case DatePreset.Overdue:
+            return { dateTo: shiftISO(today, -1) };
         case DatePreset.Today:
             return { targetDate: today };
-        case DatePreset.Yesterday:
-            return { targetDate: shiftISO(today, -1) };
-        case DatePreset.OneWeek:
-            return { dateFrom: shiftISO(today, -6), dateTo: today };
+        case DatePreset.Tomorrow:
+            return { targetDate: shiftISO(today, 1) };
+        case DatePreset.Week:
+            return { dateFrom: shiftISO(today, 2), dateTo: shiftISO(today, 6) };
+        case DatePreset.Later:
+            return { dateFrom: shiftISO(today, 7) };
         case DatePreset.Custom: {
             const range: ResolvedDateRange = {};
             if (search.start_date) range.dateFrom = search.start_date;

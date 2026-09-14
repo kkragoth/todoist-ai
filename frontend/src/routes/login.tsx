@@ -55,7 +55,7 @@ function LoginPage() {
                 <label className="flex flex-col gap-1 text-sm">
                     Username
                     <input
-                        className="h-9 rounded-lg border border-input bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        className="h-9 rounded-lg border border-input bg-card px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                         value={username}
                         onChange={(e) => setUsername(e.target.value)}
                         autoComplete="username"
@@ -66,7 +66,7 @@ function LoginPage() {
                     Password
                     <input
                         type="password"
-                        className="h-9 rounded-lg border border-input bg-background px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+                        className="h-9 rounded-lg border border-input bg-card px-3 outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         autoComplete="current-password"

@@ -15,7 +15,7 @@ export const Route = createFileRoute("/todos")({
 });
 
 function TodosPage() {
-    const { isAuthenticated, isLoading, username } = useAuth();
+    const { isAuthenticated, isLoading } = useAuth();
     useTodosEvents(isAuthenticated);
 
     if (isLoading) return <p className="text-sm text-muted-foreground">Checking session…</p>;
@@ -25,7 +25,7 @@ function TodosPage() {
         <div>
             <TodoCreateForm />
             <TodosFilters />
-            <TodoList username={username} isAuthenticated={isAuthenticated} authChecked={!isLoading} />
+            <TodoList isAuthenticated={isAuthenticated} authChecked={!isLoading} />
         </div>
     );
 }
