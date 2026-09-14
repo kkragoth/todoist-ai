@@ -1,0 +1,28 @@
+{
+  "name": "todoist-ai-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Todoist AI chat CLI — OpenTUI client for POST /api/chat (server-side ReAct loop)",
+  "bin": {
+    "todoist-ai": "./dist/main.js"
+  },
+  "scripts": {
+    "dev": "NODE_OPTIONS=--experimental-ffi tsx src/main.tsx",
+    "build": "tsc -p tsconfig.json",
+    "start": "NODE_OPTIONS=--experimental-ffi node dist/main.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.5.11",
+    "@opentui/react": "^0.5.11",
+    "cli-spinners": "^3.4.0",
+    "react": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

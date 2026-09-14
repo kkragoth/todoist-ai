@@ -129,6 +129,15 @@ async def run_turn(
 
                 if mode == "messages":
                     chunk, meta_ignored = data
+                    # The "messages" stream yields chunks from every node,
+                    # including the tools node (ToolMessage carrying the full
+                    # tool output as content). Only the model node speaks for
+                    # the answer — tool output has its own tool_result event
+                    # from the "updates" branch below. Without this guard the
+                    # tool output is emitted as answer tokens and then
+                    # restated by the model, i.e. every answer appears twice.
+                    if chunk.__class__.__name__ == "ToolMessage":
+                        continue
                     delta = text_delta(getattr(chunk, "content", ""))
                     if delta:
                         yield {"type": "token", "content": delta}
