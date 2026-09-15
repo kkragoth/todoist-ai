@@ -13,6 +13,8 @@ interface SessionState {
     threadId: string;
     provider: string | undefined;
     model: string | undefined;
+    /** MCP direct mode: plain text lists via MCP (bypasses the LLM). */
+    mcpDirect: boolean;
     connection: ConnectionStatus;
     init: (options: CliOptions) => void;
     signIn: (token: string, username: string) => void;
@@ -22,6 +24,7 @@ interface SessionState {
     setThreadId: (threadId: string) => void;
     setProvider: (provider: string | undefined) => void;
     setModel: (model: string | undefined) => void;
+    setMcpDirect: (mcpDirect: boolean) => void;
     setConnection: (connection: ConnectionStatus) => void;
     /** Probe GET /health with a short timeout and flip connection state. */
     checkConnection: () => Promise<boolean>;
@@ -34,6 +37,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     threadId: "",
     provider: undefined,
     model: undefined,
+    mcpDirect: false,
     connection: ConnectionStatus.Connecting,
     init: (options) =>
         set({
@@ -41,6 +45,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
             threadId: options.threadId,
             provider: options.provider,
             model: options.model,
+            mcpDirect: options.mcpDirect,
         }),
     signIn: (token, username) => {
         saveTokenData({ access_token: token, token_type: "bearer" });
@@ -58,6 +63,7 @@ export const useSessionStore = create<SessionState>()((set, get) => ({
     setThreadId: (threadId) => set({ threadId }),
     setProvider: (provider) => set({ provider }),
     setModel: (model) => set({ model }),
+    setMcpDirect: (mcpDirect) => set({ mcpDirect }),
     setConnection: (connection) => set({ connection }),
     checkConnection: async () => {
         const { apiUrl } = get();

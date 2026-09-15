@@ -17,20 +17,48 @@ export function parseArgs(argv: string[]): CliOptions & { help: boolean } {
     const threadId = pickFlag(argv, "--thread") ?? process.env["TODO_THREAD"] ?? "";
     const provider = pickFlag(argv, "--provider") ?? process.env["TODO_PROVIDER"] ?? undefined;
     const model = pickFlag(argv, "--model") ?? process.env["TODO_MODEL"] ?? undefined;
+    const mcpDirect = hasFlag(argv, "--mcp-direct") || process.env["TODO_MCP_DIRECT"] === "1";
     return {
         apiUrl: apiUrl.replace(/\/$/, ""),
         threadId,
         provider: provider || undefined,
         model: model || undefined,
+        mcpDirect,
         help: hasFlag(argv, "--help", "-h"),
     };
 }
 
 export const HELP_TEXT = `todoist-ai chat CLI (OpenTUI)
 
-Usage: todoist-ai [--api-url URL] [--thread ID] [--provider P] [--model M]
+Usage: todoist-ai [--api-url URL] [--thread ID] [--provider P] [--model M] [--mcp-direct]
 
-Env: TODO_API_URL, TODO_THREAD, TODO_PROVIDER, TODO_MODEL
+Env: TODO_API_URL, TODO_THREAD, TODO_PROVIDER, TODO_MODEL, TODO_MCP_DIRECT=1
+
+Slash commands (in-app):
+  /help              show commands
+  /clear             delete server history for this thread
+  /thread [id]       show current or switch numeric thread
+  /threads           list your threads
+  /provider [name]   show or set provider (ollama|llamacpp|openrouter)
+  /model [name]      show or set model
+  /logout            drop saved token
+  /quit              exit
+
+MCP direct (bypass the LLM, talk Streamable HTTP to /mcp directly):
+  /mcp [on|off]      toggle direct mode (--mcp-direct starts with it on)
+  /tools             list MCP tools
+  /resources         list MCP resources (todo://todos, todo://todos/{id})
+  /prompts           list MCP prompts
+  /list [query]      list todos via MCP
+  /read <id>         read one todo resource
+  /add <task>        add a todo via MCP
+  /done <id>         mark todo done via MCP
+  /reopen <id>       mark todo open via MCP
+  /archive <id>      archive (soft-hide) via MCP
+  /delete <id>       permanently delete via MCP
+
+Threads are numeric server-side; the CLI learns the id from the
+X-Chat-Thread-Id response header. Omit --thread to use most recent.
 
 Slash commands (in-app):
   /help              show commands

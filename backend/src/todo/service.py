@@ -239,6 +239,22 @@ def update_todo(
         db.close()
 
 
+def get_todo(user_id: int, todo_id: int):
+    """Fetch one user-scoped todo row (detached from the session)."""
+    db = SessionLocal()
+    try:
+        todo = (
+            db.query(models.Todo)
+            .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
+            .first()
+        )
+        if todo is not None:
+            db.expunge(todo)
+        return todo
+    finally:
+        db.close()
+
+
 def archive_todo(user_id: int, todo_id: int) -> str:
     db = SessionLocal()
     try:
@@ -256,5 +272,27 @@ def archive_todo(user_id: int, todo_id: int) -> str:
             user_id, {"type": "todos-changed", "action": "archived", "id": todo.id}
         )
         return f"Archived Task #{todo.id} '{todo.task}'. It will no longer show up in listings."
+    finally:
+        db.close()
+
+
+def delete_todo(user_id: int, todo_id: int) -> str:
+    """Hard-delete one user-scoped todo. Unlike archive_todo the row is gone."""
+    db = SessionLocal()
+    try:
+        todo = (
+            db.query(models.Todo)
+            .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
+            .first()
+        )
+        if not todo:
+            return "Error: Todo not found."
+        label = todo.task
+        db.delete(todo)
+        db.commit()
+        events.broadcast(
+            user_id, {"type": "todos-changed", "action": "deleted", "id": todo_id}
+        )
+        return f"Deleted Task #{todo_id} '{label}'. It is permanently gone."
     finally:
         db.close()

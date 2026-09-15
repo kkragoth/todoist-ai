@@ -7,6 +7,7 @@ export function HeaderBar() {
     const provider = useSessionStore((s) => s.provider);
     const model = useSessionStore((s) => s.model);
     const threadId = useSessionStore((s) => s.threadId);
+    const mcpDirect = useSessionStore((s) => s.mcpDirect);
 
     return (
         <box
@@ -22,6 +23,7 @@ export function HeaderBar() {
                     {" "}
                     · {username || "…"} · {provider ?? "default"}:{model ?? "default"} · thread {threadId || "…"}
                 </span>
+                {mcpDirect && <strong fg="yellow"> · MCP-DIRECT</strong>}
             </text>
             <ConnectionStatusBadge />
         </box>

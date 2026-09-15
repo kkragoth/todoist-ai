@@ -159,3 +159,22 @@ def archive_todo(
     except ValueError as e:
         return f"Error: {e}"
     return todo_service.archive_todo(user.id, todo_id=todo_id)
+
+
+@mcp.tool()
+def delete_todo(
+    todo_id: int,
+    headers: dict = CurrentHeaders(),
+) -> str:
+    """Permanently delete a todo task (hard delete, cannot be undone).
+    Prefer archive_todo (soft-hide) unless the caller explicitly wants
+    the row gone.
+
+    Args:
+        todo_id: The ID of the task to delete.
+    """
+    try:
+        user = resolve_user_from_headers(headers)
+    except ValueError as e:
+        return f"Error: {e}"
+    return todo_service.delete_todo(user.id, todo_id=todo_id)

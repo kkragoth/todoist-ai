@@ -3,6 +3,7 @@ export interface CliOptions {
     threadId: string;
     provider?: string;
     model?: string;
+    mcpDirect: boolean;
 }
 
 export type ChatEvent =
@@ -68,6 +69,17 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     { name: "/model", usage: "/model [name]", desc: "show or set model" },
     { name: "/logout", usage: "/logout", desc: "drop saved token" },
     { name: "/quit", usage: "/quit", desc: "exit" },
+    { name: "/mcp", usage: "/mcp [on|off|status]", desc: "MCP direct mode (bypass LLM)" },
+    { name: "/tools", usage: "/tools", desc: "list MCP tools" },
+    { name: "/resources", usage: "/resources", desc: "list MCP resources" },
+    { name: "/prompts", usage: "/prompts", desc: "list MCP prompts" },
+    { name: "/list", usage: "/list [query]", desc: "list todos via MCP" },
+    { name: "/read", usage: "/read <id>", desc: "read one todo resource" },
+    { name: "/add", usage: "/add <task>", desc: "add todo via MCP" },
+    { name: "/done", usage: "/done <id>", desc: "mark todo done via MCP" },
+    { name: "/reopen", usage: "/reopen <id>", desc: "mark todo open via MCP" },
+    { name: "/archive", usage: "/archive <id>", desc: "archive todo via MCP" },
+    { name: "/delete", usage: "/delete <id>", desc: "permanently delete via MCP" },
 ];
 
 export enum AuthMode {
