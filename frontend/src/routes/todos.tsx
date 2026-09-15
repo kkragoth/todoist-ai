@@ -20,7 +20,7 @@ function TodosPage() {
     if (!isAuthenticated) return <Navigate to="/login" search={{ redirect: "/todos" }} />;
 
     return (
-        <div>
+        <div className="rounded-xl border border-border bg-white p-4 shadow-sm sm:p-5 dark:bg-card">
             <TodosViewControls />
             <TodosFilters />
             <TodoList isAuthenticated={isAuthenticated} authChecked={!isLoading} />
