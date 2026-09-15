@@ -64,8 +64,8 @@ from .protocol import (
     ClientCapability,
     ToolName,
     has_ui_action,
-    normalize_capabilities,
 )
+from .schemas import ClientInfo
 from .tools import ChatContext, build_tools_for_user
 
 logger = logging.getLogger(__name__)
@@ -269,12 +269,12 @@ async def run_turn(
     thread_id: int | str | None = None,
     provider: str | None = None,
     model: str | None = None,
-    client=None,
+    client: ClientInfo | None = None,
     is_disconnected=None,
 ) -> AsyncGenerator[dict, None]:
     """Run one full reason/act loop for this turn, yielding event dicts.
 
-    `client` is the optional ChatRequest.client (BaseModel or dict) with
+    `client` is the optional validated ChatRequest.client with
     kind/capabilities/ui_state. Only clients advertising `"ui_action"` get
     the UI tools and their `ui_action` events.
     """
@@ -287,17 +287,9 @@ async def run_turn(
         yield {"type": ChatEventType.ERROR.value, "message": str(e)}
         return
 
-    if isinstance(client, dict):
-        raw_caps = client.get("capabilities") or []
-        ui_state = client.get("ui_state")
-        capabilities = normalize_capabilities(raw_caps)
-    elif client is not None:
-        raw_caps = getattr(client, "capabilities", None) or []
-        if raw_caps and isinstance(list(raw_caps)[0], ClientCapability):
-            capabilities = set(raw_caps)
-        else:
-            capabilities = normalize_capabilities(raw_caps)
-        ui_state = getattr(client, "ui_state", None)
+    if client is not None:
+        capabilities = set(client.capabilities or [])
+        ui_state = client.ui_state
     else:
         capabilities = set()
         ui_state = None
@@ -312,7 +304,7 @@ async def run_turn(
     user_message = HumanMessage(content=user_text)
     messages = [
         system_prompt(
-            datetime.now().strftime("%Y-%m-%d"),
+            datetime.now().date(),
             ui_context=format_ui_context(ui_state),
             has_ui_tools=has_ui_action(capabilities),
         ),

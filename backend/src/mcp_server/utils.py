@@ -33,11 +33,8 @@ def resolve_user_from_headers(headers: dict) -> User:
         raise ValueError("Invalid or expired token — log in again.")
     if not username:
         raise ValueError("Invalid token — log in again.")
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         user = db.query(User).filter(User.username == username).first()
-    finally:
-        db.close()
     if not user:
         raise ValueError("User not found — register first.")
     return user

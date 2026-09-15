@@ -8,7 +8,7 @@ Rule of thumb applied here: static instructions first, dynamic values
 `today_str` is still injected per turn so relative dates never go stale
 in a long session — it just lives in the final line, after a separator."""
 
-from datetime import datetime
+from datetime import date
 
 from langchain_core.messages import SystemMessage
 
@@ -79,22 +79,21 @@ WIDGET_INSTRUCTIONS = (
 )
 
 
-def DYNAMIC_INSTRUCTIONS(today_str: str) -> str:
+def DYNAMIC_INSTRUCTIONS(today: date) -> str:
     """Dynamic prompt suffix. Takes the date, returns the closing lines.
 
     Kept as a separate callable (and rendered LAST) so the static block
     above stays byte-stable for prefix caching.
     """
-    weekday = datetime.strptime(today_str, "%Y-%m-%d").strftime("%A")
-    return f"---\nToday is {today_str} ({weekday})."
+    return f"---\nToday is {today.isoformat()} ({today.strftime('%A')})."
 
 
-def system_prompt(today_str: str, ui_context: str | None = None, has_ui_tools: bool = False) -> SystemMessage:
+def system_prompt(today: date, ui_context: str | None = None, has_ui_tools: bool = False) -> SystemMessage:
     """Static blocks first (prefix-cache stable), date + UI context last."""
     content = STATIC_INSTRUCTIONS
     if has_ui_tools:
         content += f"\n{UI_INSTRUCTIONS}{WIDGET_INSTRUCTIONS}"
-    content += f"\n{DYNAMIC_INSTRUCTIONS(today_str)}"
+    content += f"\n{DYNAMIC_INSTRUCTIONS(today)}"
     if ui_context:
         content += f"\nCurrently shown in the web UI: {ui_context}"
     return SystemMessage(content=content)
