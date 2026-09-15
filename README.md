@@ -1,6 +1,18 @@
 # Todoist AI
 
+Reference example of adding MCP to a Python FastAPI backend built over a
+CRUD resource (todos), extended with LLM chat that can drive gated UI updates:
+the chat ReAct loop emits `ui_action` / widget events only to clients that
+advertise the `ui_action` capability, so the LLM can change the web UI while
+plain clients stay text-only.
+
 AI todo app: FastAPI backend (LLM chat + REST + MCP), OpenTUI chat CLI, web frontend.
+
+## Demo
+
+[![Todoist AI Demo](https://img.youtube.com/vi/stUHhtTdR_E/maxresdefault.jpg)](https://youtu.be/stUHhtTdR_E)
+
+Watch the demo: https://youtu.be/stUHhtTdR_E
 
 | Dir | What |
 | --- | ---- |
