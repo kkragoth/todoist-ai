@@ -19,6 +19,19 @@ export function parseTodoView(value: unknown): TodoView {
     }
 }
 
+export function parseTodoViewStrict(value: unknown): TodoView | null {
+    switch (value) {
+        case TodoView.List:
+            return TodoView.List;
+        case TodoView.Grouped:
+            return TodoView.Grouped;
+        case TodoView.GroupedByDay:
+            return TodoView.GroupedByDay;
+        default:
+            return null;
+    }
+}
+
 export function viewLabel(view: TodoView): string {
     switch (view) {
         case TodoView.List:

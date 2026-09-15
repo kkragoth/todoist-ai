@@ -25,6 +25,20 @@ from pydantic import BaseModel, Field
 
 from todo import service as todo_service
 
+from .protocol import (
+    HIGHLIGHT_MAX_IDS,
+    MAX_SUGGESTION_CHARS,
+    MAX_SUGGESTIONS,
+    ClientCapability,
+    DatePreset,
+    Density,
+    ListSort,
+    TodosView,
+    TodoStatusFilter,
+    ToolName,
+    normalize_capabilities,
+)
+
 
 class ListTodosArgs(BaseModel):
     completed: Optional[bool] = Field(
@@ -83,10 +97,10 @@ class AskUserArgs(BaseModel):
 
 
 class SetTodosFilterArgs(BaseModel):
-    status: Optional[str] = Field(
+    status: Optional[TodoStatusFilter] = Field(
         default=None, description='One of: all | open | done. Omit to keep the current filter.'
     )
-    date_preset: Optional[str] = Field(
+    date_preset: Optional[DatePreset] = Field(
         default=None,
         description="One of: all | overdue | today | tomorrow | week | later | custom. Omit to keep.",
     )
@@ -100,24 +114,27 @@ class SetTodosFilterArgs(BaseModel):
 
 
 class SetTodosViewArgs(BaseModel):
-    view: Optional[str] = Field(
+    view: Optional[TodosView] = Field(
         default=None, description="One of: list | grouped | grouped_by_day. Omit to keep."
     )
-    sort: Optional[str] = Field(default=None, description="One of: asc | desc. Omit to keep.")
-    density: Optional[str] = Field(
+    sort: Optional[ListSort] = Field(default=None, description="One of: asc | desc. Omit to keep.")
+    density: Optional[Density] = Field(
         default=None, description="One of: comfortable | compact. Omit to keep."
     )
 
 
 class HighlightTodosArgs(BaseModel):
     ids: list[int] = Field(
-        max_length=20, description="Todo IDs to flash-highlight in the list so the user sees them."
+        min_length=1,
+        max_length=HIGHLIGHT_MAX_IDS,
+        description="Todo IDs to flash-highlight in the list so the user sees them.",
     )
 
 
 class SuggestFollowupsArgs(BaseModel):
     suggestions: list[str] = Field(
-        max_length=4,
+        min_length=1,
+        max_length=MAX_SUGGESTIONS,
         description="2-4 short follow-up actions the user likely wants next, each under 40 chars.",
     )
 
@@ -141,7 +158,9 @@ def format_web_list_text(out) -> str:
     return "\n".join(lines)
 
 
-def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str] = ()) -> list[StructuredTool]:
+def build_tools_for_user(
+    user_id: int, capabilities: tuple[str, ...] | list[str] | set[str] = ()
+) -> list[StructuredTool]:
     """Create the todo tools closed over `user_id`.
 
     Data tools are always present. UI-only tools (no DB work — the real
@@ -149,6 +168,8 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
     only added when `"ui_action"` is in `capabilities`, so CLI clients
     never see them.
     """
+    caps = normalize_capabilities(capabilities)
+    ui_enabled = ClientCapability.UI_ACTION in caps
 
     async def list_todos_tool(
         completed: Optional[bool] = None,
@@ -175,7 +196,7 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
         if not rows:
             return "No tasks found.", None
         out = todo_service.to_todo_list_out(rows)
-        if "ui_action" in (capabilities or []):
+        if ui_enabled:
             # Web clients render rows as widgets: compact data text with an
             # inline do-not-relist directive (far harder to ignore than a
             # system-prompt tail). CLI keeps the echo-verbatim bullets.
@@ -219,8 +240,8 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
         return f"Asked user: {question}"
 
     async def set_todos_filter_tool(
-        status: Optional[str] = None,
-        date_preset: Optional[str] = None,
+        status: Optional[TodoStatusFilter] = None,
+        date_preset: Optional[DatePreset] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         archived: Optional[bool] = None,
@@ -240,9 +261,9 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
         return f"Filter change requested (client applies it): {applied or 'no-op'}"
 
     async def set_todos_view_tool(
-        view: Optional[str] = None,
-        sort: Optional[str] = None,
-        density: Optional[str] = None,
+        view: Optional[TodosView] = None,
+        sort: Optional[ListSort] = None,
+        density: Optional[Density] = None,
     ) -> str:
         """UI-only passthrough for list/grouped/by-day + sort + density."""
         applied = drop_nones({"view": view, "sort": sort, "density": density})
@@ -256,7 +277,9 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
         """UI-only passthrough: the service emits a `ui_suggestions` event
         and the client renders them as tappable chips. The strings only
         land in history so the next turn remembers what was offered."""
-        clean = [s.strip() for s in (suggestions or []) if s.strip()][:4]
+        clean = [s.strip()[:MAX_SUGGESTION_CHARS] for s in (suggestions or []) if s.strip()][
+            :MAX_SUGGESTIONS
+        ]
         return f"Suggested follow-ups (client renders them): {clean or 'none'}"
 
     list_description = (
@@ -268,7 +291,7 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
         "query: fuzzy name filter, combine with target_date when the user "
         "names a task plus a day. "
     )
-    if "ui_action" in (capabilities or []):
+    if ui_enabled:
         # Web rows render as widgets: narrate with counts + key IDs, never
         # re-list. CLI (below) must echo every bullet, it has no widgets.
         list_description += (
@@ -286,14 +309,14 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
     tools = [
         StructuredTool.from_function(
             coroutine=list_todos_tool,
-            name="list_todos",
+            name=ToolName.LIST_TODOS.value,
             description=list_description,
             args_schema=ListTodosArgs,
             response_format="content_and_artifact",
         ),
         StructuredTool.from_function(
             coroutine=add_todo_tool,
-            name="add_todo",
+            name=ToolName.ADD_TODO.value,
             description=(
                 "Add a new todo item for the authenticated user. "
                 "task: description. todo_date: YYYY-MM-DD, defaults to today."
@@ -302,7 +325,7 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
         ),
         StructuredTool.from_function(
             coroutine=update_todo_tool,
-            name="update_todo",
+            name=ToolName.UPDATE_TODO.value,
             description=(
                 "Modify an existing todo: rename, reschedule, or (un)complete it. "
                 "Use IDs from listed results, never guess one. "
@@ -313,13 +336,13 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
         ),
         StructuredTool.from_function(
             coroutine=archive_todo_tool,
-            name="archive_todo",
+            name=ToolName.ARCHIVE_TODO.value,
             description="Archive a todo task so it is hidden from normal listings.",
             args_schema=ArchiveTodoArgs,
         ),
         StructuredTool.from_function(
             coroutine=ask_user_tool,
-            name="ask_user",
+            name=ToolName.ASK_USER.value,
             description=(
                 "Ask the user a clarifying question INSTEAD of acting. Use when "
                 "zero or 2+ tasks match, or a pronoun has no single clear target. "
@@ -329,12 +352,12 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
         ),
     ]
 
-    if "ui_action" in (capabilities or []):
+    if ui_enabled:
         tools.extend(
             [
                 StructuredTool.from_function(
                     coroutine=set_todos_filter_tool,
-                    name="set_todos_filter",
+                    name=ToolName.SET_TODOS_FILTER.value,
                     description=(
                         "Change the web list FILTER (client-local, no DB write). "
                         "Call when the user asks to show/filter the list "
@@ -346,7 +369,7 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
                 ),
                 StructuredTool.from_function(
                     coroutine=set_todos_view_tool,
-                    name="set_todos_view",
+                    name=ToolName.SET_TODOS_VIEW.value,
                     description=(
                         "Change the web list VIEW/SORT/DENSITY (client-local). "
                         "Call for 'group by day', 'flat list', 'compact', "
@@ -356,7 +379,7 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
                 ),
                 StructuredTool.from_function(
                     coroutine=highlight_todos_tool,
-                    name="highlight_todos",
+                    name=ToolName.HIGHLIGHT_TODOS.value,
                     description=(
                         "Flash-highlight todo IDs in the web list so the user "
                         "sees them (client-local). Call with IDs from listed "
@@ -367,7 +390,7 @@ def build_tools_for_user(user_id: int, capabilities: tuple[str, ...] | list[str]
                 ),
                 StructuredTool.from_function(
                     coroutine=suggest_followups_tool,
-                    name="suggest_followups",
+                    name=ToolName.SUGGEST_FOLLOWUPS.value,
                     description=(
                         "Offer 2-4 tappable follow-up chips in the web UI "
                         "(client-local). Call once per turn after answering, "

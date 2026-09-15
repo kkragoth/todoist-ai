@@ -4,7 +4,12 @@
 // mirroring `cli/src/lib/chat-turn.ts` over this store.
 
 import { create } from "zustand";
-import type { AssistantWidget, UiActionKind } from "@/lib/chat";
+import { CHAT_MAX_SUGGESTIONS, setWidgetTodoCompleted, type AssistantWidget, type UiActionKind } from "@/lib/chat";
+
+export enum MessageRole {
+    User = "user",
+    Assistant = "assistant",
+}
 
 export interface AssistantToolCall {
     tool: string;
@@ -24,7 +29,7 @@ export interface AssistantUiNotice {
 
 export interface AssistantMessage {
     id: number;
-    role: "user" | "assistant";
+    role: MessageRole;
     text: string;
     toolCalls: AssistantToolCall[];
     clarification?: AssistantClarification;
@@ -64,6 +69,7 @@ interface AssistantState {
     addUiNotice: (id: number, notice: AssistantUiNotice) => void;
     addWidget: (id: number, widget: AssistantWidget) => void;
     addSuggestions: (id: number, suggestions: string[]) => void;
+    setWidgetTodoCompleted: (id: number, completed: boolean) => void;
     setBusy: (busy: boolean) => void;
     setStatus: (status: string) => void;
     setThreadId: (threadId: string) => void;
@@ -77,7 +83,7 @@ export const useAssistantStore = create<AssistantState>()((set) => ({
     messages: [
         {
             id: nextId,
-            role: "assistant",
+            role: MessageRole.Assistant,
             text: "Ask me to add, reschedule, or find tasks — I'll drive the same filters and list.",
             toolCalls: [],
             uiNotices: [],
@@ -94,7 +100,7 @@ export const useAssistantStore = create<AssistantState>()((set) => ({
                 ...s.messages,
                 {
                     id: nextAssistantId(),
-                    role: "user",
+                    role: MessageRole.User,
                     text,
                     toolCalls: [],
                     uiNotices: [],
@@ -108,7 +114,15 @@ export const useAssistantStore = create<AssistantState>()((set) => ({
         set((s) => ({
             messages: [
                 ...s.messages,
-                { id, role: "assistant", text: "", toolCalls: [], uiNotices: [], widgets: [], suggestions: [] },
+                {
+                    id,
+                    role: MessageRole.Assistant,
+                    text: "",
+                    toolCalls: [],
+                    uiNotices: [],
+                    widgets: [],
+                    suggestions: [],
+                },
             ],
         }));
         return id;
@@ -141,7 +155,7 @@ export const useAssistantStore = create<AssistantState>()((set) => ({
                     options: options
                         .map((o) => o.trim())
                         .filter((o) => o.length > 0)
-                        .slice(0, 4),
+                        .slice(0, CHAT_MAX_SUGGESTIONS),
                 },
             })),
         })),
@@ -153,11 +167,18 @@ export const useAssistantStore = create<AssistantState>()((set) => ({
         set((s) => ({
             messages: updateMessage(s.messages, id, (m) => ({ ...m, widgets: [...m.widgets, widget] })),
         })),
+    setWidgetTodoCompleted: (todoId, completed) =>
+        set((s) => ({
+            messages: s.messages.map((m) => ({
+                ...m,
+                widgets: m.widgets.map((w) => setWidgetTodoCompleted(w, todoId, completed)),
+            })),
+        })),
     addSuggestions: (id, suggestions) =>
         set((s) => ({
             messages: updateMessage(s.messages, id, (m) => ({
                 ...m,
-                suggestions: [...m.suggestions, ...suggestions].slice(0, 4),
+                suggestions: [...m.suggestions, ...suggestions].slice(0, CHAT_MAX_SUGGESTIONS),
             })),
         })),
     setBusy: (busy) => set({ busy }),
@@ -179,10 +200,7 @@ export const useAssistantStore = create<AssistantState>()((set) => ({
 export function resolveAssistantPick(messages: AssistantMessage[], text: string): string {
     const trimmed = text.trim();
     if (!/^[1-4]$/.test(trimmed)) return text;
-    for (let i = messages.length - 1; i >= 0; i--) {
-        const options = messages[i]!.clarification?.options ?? [];
-        if (options.length === 0) return text;
-        return options[Number(trimmed) - 1] ?? text;
-    }
-    return text;
+    const latest = [...messages].reverse().find((m) => (m.clarification?.options.length ?? 0) > 0);
+    if (!latest?.clarification) return text;
+    return latest.clarification.options[Number(trimmed) - 1] ?? text;
 }

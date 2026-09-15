@@ -2,6 +2,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
+from .protocol import ClientCapability, ClientKind
+
 
 class ClientInfo(BaseModel):
     """Who is talking to chat. Web clients advertise `ui_action` so the
@@ -9,8 +11,8 @@ class ClientInfo(BaseModel):
     `ui_state` is opaque client view context (route search params, view,
     sort, density) echoed back into the system prompt — never trusted raw."""
 
-    kind: str = Field(default="cli", description='One of: "web" | "cli".')
-    capabilities: list[str] = Field(
+    kind: ClientKind = Field(default=ClientKind.CLI, description='One of: "web" | "cli".')
+    capabilities: list[ClientCapability] = Field(
         default_factory=list,
         description='e.g. ["ui_action"] for web clients that apply ui_action events locally.',
     )

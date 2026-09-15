@@ -5,23 +5,26 @@
 import { useState } from "react";
 import { cn } from "cn";
 import { ChevronRight } from "lucide-react";
-import { usePatchTodo } from "@/hooks/useTodos";
+import { TodoWidgetRows } from "@/components/assistant/TodoWidgetRows";
 import { highlightTodoIds } from "@/lib/highlight-todos";
 import type { TodoListWidgetData } from "@/lib/chat";
 
-const VISIBLE_ROWS = 8;
+const WIDGET_VISIBLE_ROWS = 8;
 
 export function TodoListWidget({ widget }: { widget: TodoListWidgetData }) {
-    const patchMutation = usePatchTodo();
     const [collapsed, setCollapsed] = useState(false);
     const [expanded, setExpanded] = useState(false);
-    const visible = expanded ? widget.todos : widget.todos.slice(0, VISIBLE_ROWS);
+    const visible = expanded ? widget.todos : widget.todos.slice(0, WIDGET_VISIBLE_ROWS);
+
+    function handleHighlight(id: number) {
+        highlightTodoIds([id]);
+    }
 
     return (
         <div className="mt-2 overflow-hidden rounded-lg border border-border bg-card">
             <button
                 type="button"
-                onClick={() => setCollapsed(!collapsed)}
+                onClick={() => setCollapsed((v) => !v)}
                 aria-expanded={!collapsed}
                 className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-xs font-medium text-foreground"
             >
@@ -35,60 +38,21 @@ export function TodoListWidget({ widget }: { widget: TodoListWidgetData }) {
                         · showing {widget.todos.length} of {widget.total}
                     </span>
                 )}
+                <span
+                    className="ml-auto flex items-center gap-1 font-normal text-muted-foreground"
+                    title="Checking a box here updates the same task in your main list instantly."
+                >
+                    <span className="size-1.5 rounded-full bg-[#4caf7d]" aria-hidden="true" />
+                    Synced with your list
+                </span>
             </button>
             {!collapsed && (
                 <>
-                    <ul>
-                        {visible.map((todo) => (
-                            <li
-                                key={todo.id}
-                                className="flex items-center gap-2 border-t border-border/50 px-2.5 py-1.5"
-                            >
-                                <button
-                                    type="button"
-                                    onClick={() =>
-                                        patchMutation.mutate({ id: todo.id, update: { completed: !todo.completed } })
-                                    }
-                                    aria-label={todo.completed ? "Mark as open" : "Mark as done"}
-                                    className={cn(
-                                        "flex size-4 shrink-0 items-center justify-center rounded border-[1.5px] transition-colors",
-                                        todo.completed
-                                            ? "border-muted-foreground bg-muted-foreground"
-                                            : "border-border hover:border-foreground/40",
-                                    )}
-                                >
-                                    {todo.completed && (
-                                        <svg viewBox="0 0 12 12" fill="none" className="size-2.5">
-                                            <path
-                                                d="M2 6l2.5 2.5L10 3"
-                                                stroke="var(--card)"
-                                                strokeWidth="1.6"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            />
-                                        </svg>
-                                    )}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => highlightTodoIds([todo.id])}
-                                    title={`Highlight #${todo.id} in the list`}
-                                    className="min-w-0 flex-1 truncate text-left text-[13px]"
-                                >
-                                    <span className={cn(todo.completed && "text-muted-foreground line-through")}>
-                                        {todo.task}
-                                    </span>
-                                </button>
-                                <span className="shrink-0 rounded-full bg-muted px-1.5 py-px font-mono text-[11px] text-muted-foreground">
-                                    {todo.todo_date}
-                                </span>
-                            </li>
-                        ))}
-                    </ul>
-                    {widget.todos.length > VISIBLE_ROWS && (
+                    <TodoWidgetRows todos={visible} onHighlight={handleHighlight} />
+                    {widget.todos.length > WIDGET_VISIBLE_ROWS && (
                         <button
                             type="button"
-                            onClick={() => setExpanded(!expanded)}
+                            onClick={() => setExpanded((v) => !v)}
                             className="w-full border-t border-border/50 px-2.5 py-1 text-left text-xs text-muted-foreground hover:text-foreground"
                         >
                             {expanded ? "Show less" : `Show all ${widget.todos.length}`}

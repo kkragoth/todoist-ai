@@ -72,8 +72,9 @@ UI_INSTRUCTIONS = (
 
 WIDGET_INSTRUCTIONS = (
     "Listed todos also render as widgets in the web UI: after list_todos, "
-    "give one friendly sentence with the open/done counts from the tool "
-    "result — do NOT echo every bullet, the UI shows the rows. Still name "
+    "the echo-EVERY-bullet rule above does NOT apply — give one friendly "
+    "sentence with the open/done counts from the tool "
+    "result, do NOT echo every bullet, the UI shows the rows. Still name "
     "the key task IDs so they link. Never recount; use the tool's counts.\n"
 )
 
@@ -89,10 +90,11 @@ def DYNAMIC_INSTRUCTIONS(today_str: str) -> str:
 
 
 def system_prompt(today_str: str, ui_context: str | None = None, has_ui_tools: bool = False) -> SystemMessage:
-    """Static block first (prefix-cache stable), date + UI context last."""
-    content = f"{STATIC_INSTRUCTIONS}\n{DYNAMIC_INSTRUCTIONS(today_str)}"
+    """Static blocks first (prefix-cache stable), date + UI context last."""
+    content = STATIC_INSTRUCTIONS
     if has_ui_tools:
         content += f"\n{UI_INSTRUCTIONS}{WIDGET_INSTRUCTIONS}"
+    content += f"\n{DYNAMIC_INSTRUCTIONS(today_str)}"
     if ui_context:
         content += f"\nCurrently shown in the web UI: {ui_context}"
     return SystemMessage(content=content)

@@ -44,21 +44,35 @@ from collections.abc import AsyncGenerator
 from datetime import datetime
 
 from langchain.agents import create_agent
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 
 from . import config, history
 from .llm_factory import make_llm
 from .prompt import system_prompt
+from .protocol import (
+    TOOL_TO_UI_ACTION,
+    UI_DATA_MAX_ROWS,
+    UI_STATE_KEYS,
+    ChatEventType,
+    ClientCapability,
+    ToolName,
+    UiActionName,
+    WidgetKind,
+    has_ui_action,
+    normalize_capabilities,
+)
+from .protocol import MAX_SUGGESTION_CHARS as SUGGESTION_CHARS
+from .protocol import MAX_SUGGESTIONS as SUGGESTION_LIMIT
 from .tools import build_tools_for_user
 
 logger = logging.getLogger(__name__)
 
-ASK_USER_TOOL = "ask_user"
-SUGGEST_TOOL = "suggest_followups"
+ASK_USER_TOOL = ToolName.ASK_USER
+SUGGEST_TOOL = ToolName.SUGGEST_FOLLOWUPS
 
 # Max chips per turn / chars per chip for `ui_suggestions`.
-MAX_SUGGESTIONS = 4
-MAX_SUGGESTION_CHARS = 40
+MAX_SUGGESTIONS = SUGGESTION_LIMIT
+MAX_SUGGESTION_CHARS = SUGGESTION_CHARS
 
 
 def clean_suggestions(raw) -> list[str]:
@@ -73,14 +87,7 @@ def clean_suggestions(raw) -> list[str]:
 
 # UI-only tools (no DB work) -> client-local `ui_action` events.
 # Mapping: tool name -> ui_action `action` name sent over SSE.
-UI_ACTION_TOOLS = {
-    "set_todos_filter": "set_filter",
-    "set_todos_view": "set_view",
-    "highlight_todos": "highlight",
-}
-
-# Max widget rows per `ui_data` event. Counts always cover the full set.
-UI_DATA_MAX_ROWS = 30
+UI_ACTION_TOOLS = {tool.value: action.value for tool, action in TOOL_TO_UI_ACTION.items()}
 
 
 def build_ui_data_event(artifact) -> dict | None:
@@ -97,8 +104,8 @@ def build_ui_data_event(artifact) -> dict | None:
         return None
     rows = todos[:UI_DATA_MAX_ROWS]
     return {
-        "type": "ui_data",
-        "widget": "todo_list",
+        "type": ChatEventType.UI_DATA.value,
+        "widget": WidgetKind.TODO_LIST.value,
         "open": artifact.get("open", 0),
         "done": artifact.get("done", 0),
         "total": len(todos),
@@ -116,7 +123,7 @@ def strip_artifacts(messages: list) -> list:
     """
     stripped = []
     for m in messages:
-        if m.__class__.__name__ == "ToolMessage" and getattr(m, "artifact", None) is not None:
+        if isinstance(m, ToolMessage) and getattr(m, "artifact", None) is not None:
             stripped.append(m.model_copy(update={"artifact": None}))
         else:
             stripped.append(m)
@@ -129,7 +136,7 @@ def format_ui_context(ui_state) -> str | None:
     if not isinstance(ui_state, dict) or not ui_state:
         return None
     parts = []
-    for key in ("status", "date_preset", "start_date", "end_date", "archived", "view", "sort", "density"):
+    for key in UI_STATE_KEYS:
         value = ui_state.get(key)
         if value is None or value == "":
             continue
@@ -151,7 +158,7 @@ def normalize_ask(args) -> dict | None:
         : config.MAX_ASK_OPTIONS
     ]
     return {
-        "type": "ask_user",
+        "type": ChatEventType.ASK_USER.value,
         "question": question[: config.MAX_QUESTION_CHARS],
         "options": options,
     }
@@ -240,17 +247,22 @@ async def run_turn(
             provider, model
         )
     except (ValueError, RuntimeError) as e:
-        yield {"type": "error", "message": str(e)}
+        yield {"type": ChatEventType.ERROR.value, "message": str(e)}
         return
 
     if isinstance(client, dict):
-        capabilities = list(client.get("capabilities") or [])
+        raw_caps = client.get("capabilities") or []
         ui_state = client.get("ui_state")
+        capabilities = normalize_capabilities(raw_caps)
     elif client is not None:
-        capabilities = list(getattr(client, "capabilities", None) or [])
+        raw_caps = getattr(client, "capabilities", None) or []
+        if raw_caps and isinstance(list(raw_caps)[0], ClientCapability):
+            capabilities = set(raw_caps)
+        else:
+            capabilities = normalize_capabilities(raw_caps)
         ui_state = getattr(client, "ui_state", None)
     else:
-        capabilities = []
+        capabilities = set()
         ui_state = None
 
     tools = build_tools_for_user(user_id, capabilities)
@@ -262,7 +274,7 @@ async def run_turn(
         system_prompt(
             datetime.now().strftime("%Y-%m-%d"),
             ui_context=format_ui_context(ui_state),
-            has_ui_tools="ui_action" in capabilities,
+            has_ui_tools=has_ui_action(capabilities),
         ),
         *stored,
         user_message,
@@ -291,7 +303,7 @@ async def run_turn(
         seen_tool_ids.add(key)
         if call_id and name:
             tool_names[call_id] = name
-        return {"type": "tool_call", "tool": name, "args": args or {}}
+        return {"type": ChatEventType.TOOL_CALL.value, "tool": name, "args": args or {}}
 
     def check_ask(tc) -> dict | None:
         """Route one ask_user call to its event. The first call wins; later
@@ -307,7 +319,7 @@ async def run_turn(
         if name != ASK_USER_TOOL:
             return None
         if call_id:
-            tool_names[call_id] = ASK_USER_TOOL
+            tool_names[call_id] = ASK_USER_TOOL.value
             ask_call_ids.add(call_id)
         if ask_event is not None:
             return None
@@ -319,7 +331,7 @@ async def run_turn(
                 str(args)[:120],
             )
             event = {
-                "type": "ask_user",
+                "type": ChatEventType.ASK_USER.value,
                 "question": "Could you clarify which task you mean?",
                 "options": [],
             }
@@ -347,7 +359,7 @@ async def run_turn(
             tool_names[call_id] = name
             ui_call_ids.add(call_id)
         return {
-            "type": "ui_action",
+            "type": ChatEventType.UI_ACTION.value,
             "action": UI_ACTION_TOOLS[name],
             "args": args or {},
         }
@@ -372,7 +384,7 @@ async def run_turn(
         suggestions = clean_suggestions(raw)
         if not suggestions:
             return None
-        return {"type": "ui_suggestions", "suggestions": suggestions}
+        return {"type": ChatEventType.UI_SUGGESTIONS.value, "suggestions": suggestions}
 
     def route_tool_call(tc) -> dict | None:
         """Route one tool call to its SSE event. Ask calls yield ask_user,
@@ -409,13 +421,13 @@ async def run_turn(
                     # from the "updates" branch below. Without this guard the
                     # tool output is emitted as answer tokens and then
                     # restated by the model, i.e. every answer appears twice.
-                    if chunk.__class__.__name__ == "ToolMessage":
+                    if isinstance(chunk, ToolMessage):
                         continue
                     delta = text_delta(getattr(chunk, "content", ""))
                     if delta:
                         delta = prefix_stripper.feed(delta)
                     if delta:
-                        yield {"type": "token", "content": delta}
+                        yield {"type": ChatEventType.TOKEN.value, "content": delta}
                     for tc in getattr(chunk, "tool_calls", None) or []:
                         event = route_tool_call(tc)
                         if event is not None:
@@ -427,12 +439,12 @@ async def run_turn(
                             continue
                         msgs = upd if isinstance(upd, list) else [upd]
                         for m in msgs:
-                            if m.__class__.__name__ == "ToolMessage":
+                            if isinstance(m, ToolMessage):
                                 tool_call_id = getattr(m, "tool_call_id", "")
                                 tool = tool_names.get(
                                     tool_call_id, getattr(m, "name", "")
                                 )
-                                if tool == ASK_USER_TOOL or tool_call_id in ask_call_ids:
+                                if tool == ASK_USER_TOOL.value or tool_call_id in ask_call_ids:
                                     # Client already got the ask_user event;
                                     # keep the message in history, skip the noise.
                                     ask_done = True
@@ -442,11 +454,11 @@ async def run_turn(
                                     pass
                                 else:
                                     yield {
-                                        "type": "tool_result",
+                                        "type": ChatEventType.TOOL_RESULT.value,
                                         "tool": tool,
                                         "output": safe_text(getattr(m, "content", "")),
                                     }
-                                    if "ui_action" in capabilities:
+                                    if has_ui_action(capabilities):
                                         widget = build_ui_data_event(
                                             getattr(m, "artifact", None)
                                         )
@@ -468,13 +480,13 @@ async def run_turn(
                 provider=active_provider,
                 model=active_model,
             )
-        yield {"type": "done"}
+        yield {"type": ChatEventType.DONE.value}
     except TimeoutError:
         logger.warning("chat turn timed out (user_id=%s)", user_id)
         yield {
-            "type": "error",
+            "type": ChatEventType.ERROR.value,
             "message": f"Turn timed out after {config.TURN_TIMEOUT_SECONDS:g}s. Try a smaller request.",
         }
     except Exception as e:
         logger.exception("chat turn failed (user_id=%s)", user_id)
-        yield {"type": "error", "message": f"that turn failed ({e}). Try rephrasing."}
+        yield {"type": ChatEventType.ERROR.value, "message": f"that turn failed ({e}). Try rephrasing."}

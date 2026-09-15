@@ -1,130 +1,35 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { motion } from "motion/react";
-import { Send, Sparkles, Square, X } from "lucide-react";
+import { Send, Square, X } from "lucide-react";
+import { AssistantMessages } from "@/components/assistant/AssistantMessages";
+import { StarterSuggestions } from "@/components/assistant/StarterSuggestions";
 import { Button } from "@/components/ui/button";
-import { FollowUpChips } from "@/components/assistant/FollowUpChips";
-import { TodoListWidget } from "@/components/assistant/TodoListWidget";
-import { UiActionKind } from "@/lib/chat";
+import {
+    CHAT_HIGHLIGHT_MAX_IDS,
+    UiActionKind,
+    type HighlightActionArgs,
+    type SetFilterActionArgs,
+    type SetViewActionArgs,
+} from "@/lib/chat";
 import { cancelAssistantTurn, startAssistantTurn } from "@/lib/assistant-turn";
 import { highlightTodoIds } from "@/lib/highlight-todos";
 import {
     parseArchived,
-    parseDatePreset,
+    parseDatePresetStrict,
     parseISODateParam,
     parseSearch,
-    parseTodoStatus,
+    parseTodoStatusStrict,
     stripDatesUnlessCustom,
-    DatePreset,
-    TodoStatus,
+    datePresetLabel,
+    statusLabel,
     type TodosSearchParams,
 } from "@/lib/todos-filters";
-import { Density, ListSort, TodoView, parseDensity, parseListSort, parseTodoView } from "@/lib/todos-view";
-import { useAssistantStore, type AssistantMessage } from "@/stores/assistant-store";
+import { densityLabel, parseDensity, parseListSort, parseTodoViewStrict, sortLabel, viewLabel } from "@/lib/todos-view";
+import { useAssistantStore } from "@/stores/assistant-store";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
 const SUGGESTIONS = ["add tomorrow to clean up my room", "what are my today tasks?"];
-
-function isTodoViewValue(value: unknown): value is TodoView {
-    return (Object.values(TodoView) as unknown[]).includes(value);
-}
-
-function isTodoStatusValue(value: unknown): value is TodoStatus {
-    return (Object.values(TodoStatus) as unknown[]).includes(value);
-}
-
-function isDatePresetValue(value: unknown): value is DatePreset {
-    return (Object.values(DatePreset) as unknown[]).includes(value);
-}
-
-/** Render `#123` mentions as pills that flash + scroll to the row. */
-function AssistantText({ text, onPickId }: { text: string; onPickId: (id: number) => void }) {
-    const parts = text.split(/(#\d+)/g);
-    return (
-        <span className="whitespace-pre-wrap">
-            {parts.map((part, i) => {
-                const match = /^#(\d+)$/.exec(part);
-                if (!match) return <span key={i}>{part}</span>;
-                const id = Number(match[1]);
-                return (
-                    <button
-                        key={i}
-                        type="button"
-                        onClick={() => onPickId(id)}
-                        className="rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-px text-xs font-medium text-sky-600 dark:text-sky-400"
-                    >
-                        #{id}
-                    </button>
-                );
-            })}
-        </span>
-    );
-}
-
-function AssistantBubble({
-    message,
-    onSend,
-    isLatest,
-}: {
-    message: AssistantMessage;
-    onSend: (text: string) => void;
-    isLatest: boolean;
-}) {
-    return (
-        <div className="max-w-[92%] self-start text-sm text-muted-foreground">
-            {message.text && <AssistantText text={message.text} onPickId={(id) => highlightTodoIds([id])} />}
-            {message.widgets.map((widget, i) => {
-                switch (widget.kind) {
-                    case "todo_list":
-                        return <TodoListWidget key={i} widget={widget} />;
-                }
-            })}
-            {isLatest &&
-                message.clarification === undefined &&
-                (message.suggestions.length > 0 || message.widgets.length > 0) && (
-                    <FollowUpChips suggestions={message.suggestions} onSend={onSend} />
-                )}
-            {message.toolCalls.length > 0 && (
-                <details className="mt-1.5 text-xs">
-                    <summary className="cursor-pointer text-muted-foreground/70">
-                        Thought · {message.toolCalls.length} tool call{message.toolCalls.length === 1 ? "" : "s"}
-                    </summary>
-                    <ul className="mt-1 flex flex-col gap-1">
-                        {message.toolCalls.map((call, i) => (
-                            <li key={i} className="rounded-md bg-muted px-2 py-1 font-mono text-[11px]">
-                                {call.tool}
-                                {call.output === undefined ? " …" : ""}
-                            </li>
-                        ))}
-                    </ul>
-                </details>
-            )}
-            {message.uiNotices.map((notice, i) => (
-                <p key={i} className="mt-1 text-xs text-sky-600 dark:text-sky-400">
-                    ◉ {notice.summary}
-                </p>
-            ))}
-            {message.clarification && (
-                <div className="mt-2 rounded-lg border border-border bg-card p-2.5">
-                    <p className="text-[13px] font-medium text-foreground">{message.clarification.question}</p>
-                    <div className="mt-1.5 flex flex-col gap-1">
-                        {message.clarification.options.map((option, i) => (
-                            <button
-                                key={option}
-                                type="button"
-                                onClick={() => onSend(option)}
-                                className="rounded-md border border-border px-2 py-1 text-left text-xs hover:border-sky-500 hover:text-sky-600"
-                            >
-                                <span className="mr-1.5 font-mono text-muted-foreground">{i + 1}</span>
-                                {option}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
 
 export function AssistantSidebar() {
     const setOpen = useTodosUiStore((s) => s.setAssistantOpen);
@@ -162,68 +67,77 @@ export function AssistantSidebar() {
     function applyUiAction(action: UiActionKind, args: Record<string, unknown>): string {
         switch (action) {
             case UiActionKind.SetFilter: {
+                const filterArgs = args as SetFilterActionArgs;
                 const current = parseSearch((searchRef.current ?? {}) as Record<string, unknown>);
                 const next: TodosSearchParams = { ...current };
                 let changed = false;
-                if (args["status"] !== undefined) {
-                    if (!isTodoStatusValue(args["status"])) throw new Error(`bad status ${String(args["status"])}`);
-                    next.status = parseTodoStatus(args["status"]);
+                if (filterArgs.status !== undefined) {
+                    const status = parseTodoStatusStrict(filterArgs.status);
+                    if (!status) throw new Error(`bad status ${String(filterArgs.status)}`);
+                    next.status = status;
                     changed = true;
                 }
-                if (args["date_preset"] !== undefined) {
-                    if (!isDatePresetValue(args["date_preset"]))
-                        throw new Error(`bad date_preset ${String(args["date_preset"])}`);
-                    next.date_preset = parseDatePreset(args["date_preset"]);
+                if (filterArgs.date_preset !== undefined) {
+                    const preset = parseDatePresetStrict(filterArgs.date_preset);
+                    if (!preset) throw new Error(`bad date_preset ${String(filterArgs.date_preset)}`);
+                    next.date_preset = preset;
                     changed = true;
                 }
-                if (args["start_date"] !== undefined) {
-                    next.start_date = parseISODateParam(args["start_date"]);
+                if (filterArgs.start_date !== undefined) {
+                    next.start_date = parseISODateParam(filterArgs.start_date);
                     changed = true;
                 }
-                if (args["end_date"] !== undefined) {
-                    next.end_date = parseISODateParam(args["end_date"]);
+                if (filterArgs.end_date !== undefined) {
+                    next.end_date = parseISODateParam(filterArgs.end_date);
                     changed = true;
                 }
-                if (args["archived"] !== undefined) {
-                    next.archived = parseArchived(args["archived"]);
+                if (filterArgs.archived !== undefined) {
+                    next.archived = parseArchived(filterArgs.archived);
                     changed = true;
                 }
                 if (!changed) throw new Error("empty filter change");
                 void navigate({ to: "/todos", search: stripDatesUnlessCustom(next) });
-                return `Filter → ${next.date_preset} · ${next.status}${next.archived ? " · archived" : ""}`;
+                return `Filter → ${datePresetLabel(next.date_preset)} · ${statusLabel(next.status)}${next.archived ? " · archived" : ""}`;
             }
             case UiActionKind.SetView: {
+                const viewArgs = args as SetViewActionArgs;
                 const ui = useTodosUiStore.getState();
                 const applied: string[] = [];
-                if (args["view"] !== undefined) {
-                    if (!isTodoViewValue(args["view"])) throw new Error(`bad view ${String(args["view"])}`);
-                    ui.setView(parseTodoView(args["view"]));
-                    applied.push(String(args["view"]).replaceAll("_", " "));
+                if (viewArgs.view !== undefined) {
+                    const view = parseTodoViewStrict(viewArgs.view);
+                    if (!view) throw new Error(`bad view ${String(viewArgs.view)}`);
+                    ui.setView(view);
+                    applied.push(viewLabel(view));
                 }
-                if (args["sort"] !== undefined) {
-                    const sort = parseListSort(args["sort"]);
-                    if (!sort) throw new Error(`bad sort ${String(args["sort"])}`);
+                if (viewArgs.sort !== undefined) {
+                    const sort = parseListSort(viewArgs.sort);
+                    if (!sort) throw new Error(`bad sort ${String(viewArgs.sort)}`);
                     ui.setListSort(sort);
-                    applied.push(sort === ListSort.Asc ? "oldest first" : "newest first");
+                    applied.push(sortLabel(sort));
                 }
-                if (args["density"] !== undefined) {
-                    const density = parseDensity(args["density"]);
-                    if (!density) throw new Error(`bad density ${String(args["density"])}`);
+                if (viewArgs.density !== undefined) {
+                    const density = parseDensity(viewArgs.density);
+                    if (!density) throw new Error(`bad density ${String(viewArgs.density)}`);
                     ui.setDensity(density);
-                    applied.push(density === Density.Compact ? "compact" : "comfortable");
+                    applied.push(densityLabel(density));
                 }
                 if (applied.length === 0) throw new Error("empty view change");
                 return `View → ${applied.join(" · ")}`;
             }
             case UiActionKind.Highlight: {
-                const raw = args["ids"];
+                const raw = (args as HighlightActionArgs).ids;
                 const ids = (Array.isArray(raw) ? raw : [])
                     .map((v) => (typeof v === "string" && /^\d+$/.test(v) ? Number(v) : v))
                     .filter((v): v is number => typeof v === "number" && Number.isInteger(v))
-                    .slice(0, 20);
+                    .slice(0, CHAT_HIGHLIGHT_MAX_IDS);
                 if (ids.length === 0) throw new Error("no valid todo ids");
                 highlightTodoIds(ids);
                 return `Highlighted ${ids.map((id) => `#${id}`).join(", ")}`;
+            }
+            default: {
+                const _exhaustive: never = action;
+                void _exhaustive;
+                throw new Error(`unknown ui action ${String(action)}`);
             }
         }
     }
@@ -246,7 +160,7 @@ export function AssistantSidebar() {
         >
             <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
                 <p className="flex items-center gap-2 text-sm font-semibold">
-                    <span className="size-2 rounded-full bg-sky-500" />
+                    <span className="size-2 rounded-full bg-sky-500 dark:bg-assistant-blue" />
                     Assistant
                 </p>
                 <Button variant="ghost" size="icon-sm" onClick={() => setOpen(false)} aria-label="Close assistant">
@@ -254,39 +168,10 @@ export function AssistantSidebar() {
                 </Button>
             </div>
             <div ref={bodyRef} className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-4">
-                {messages.map((msg, i) =>
-                    msg.role === "user" ? (
-                        <div
-                            key={msg.id}
-                            className="max-w-[88%] self-end rounded-xl rounded-br-sm border border-border/60 bg-muted px-3 py-2 text-sm"
-                        >
-                            {msg.text}
-                        </div>
-                    ) : (
-                        <AssistantBubble
-                            key={msg.id}
-                            message={msg}
-                            onSend={send}
-                            isLatest={i === messages.length - 1}
-                        />
-                    ),
-                )}
+                <AssistantMessages messages={messages} onSend={send} />
                 {busy && <p className="self-start text-xs text-muted-foreground">{status}</p>}
             </div>
-            {!busy && messages.length <= 2 && (
-                <div className="flex flex-col gap-1.5 px-3 pb-2">
-                    {SUGGESTIONS.map((suggestion) => (
-                        <button
-                            key={suggestion}
-                            type="button"
-                            onClick={() => send(suggestion)}
-                            className="rounded-lg border border-dashed border-border px-2.5 py-1.5 text-left text-xs text-muted-foreground hover:border-sky-500 hover:text-sky-600"
-                        >
-                            {suggestion}
-                        </button>
-                    ))}
-                </div>
-            )}
+            {!busy && messages.length <= 2 && <StarterSuggestions suggestions={SUGGESTIONS} onSend={send} />}
             <form
                 className="flex items-center gap-2 border-t border-border/60 p-3"
                 onSubmit={(e) => {
@@ -318,24 +203,5 @@ export function AssistantSidebar() {
                 </Button>
             </form>
         </motion.aside>
-    );
-}
-
-export function AskAssistantButton() {
-    const open = useTodosUiStore((s) => s.assistantOpen);
-    const setOpen = useTodosUiStore((s) => s.setAssistantOpen);
-    function onClick() {
-        // Never collapses: when already open, focus the input instead.
-        if (open) {
-            document.getElementById("assistant-input")?.focus();
-            return;
-        }
-        setOpen(true);
-    }
-    return (
-        <Button size="sm" variant={open ? "secondary" : "default"} onClick={onClick}>
-            <Sparkles />
-            Ask assistant
-        </Button>
     );
 }

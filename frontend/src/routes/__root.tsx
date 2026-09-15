@@ -1,6 +1,7 @@
 import { Link, Outlet, createRootRoute } from "@tanstack/react-router";
 import { AnimatePresence } from "motion/react";
-import { AskAssistantButton, AssistantSidebar } from "@/components/assistant-sidebar";
+import { AskAssistantButton } from "@/components/assistant/AskAssistantButton";
+import { AssistantSidebar } from "@/components/assistant-sidebar";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
@@ -18,7 +19,7 @@ function RootLayout() {
 
     return (
         <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
-            <header className="z-20 h-12 shrink-0 border-b border-border/60 bg-card/80 backdrop-blur">
+            <header className="z-20 h-12 shrink-0 border-b border-border/60 bg-background">
                 <div className="flex h-12 w-full items-center justify-between px-3">
                     <div className="flex items-center gap-3">
                         <Link to="/" className="text-[13px] font-semibold tracking-tight">
