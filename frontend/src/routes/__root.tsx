@@ -2,6 +2,8 @@ import { Link, Outlet, createRootRoute } from "@tanstack/react-router";
 import { AnimatePresence } from "motion/react";
 import { AskAssistantButton } from "@/components/assistant/AskAssistantButton";
 import { AssistantSidebar } from "@/components/assistant-sidebar";
+import { AddTaskButton } from "@/components/todos/AddTaskButton";
+import { AddTodoDialog } from "@/components/todos/AddTodoDialog";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
@@ -19,7 +21,7 @@ function RootLayout() {
 
     return (
         <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
-            <header className="z-20 h-12 shrink-0 border-b border-border/60 bg-background">
+            <header className="z-20 h-12 shrink-0 border-b border-border/60 bg-white dark:bg-background">
                 <div className="flex h-12 w-full items-center justify-between px-3">
                     <div className="flex items-center gap-3">
                         <Link to="/" className="text-[13px] font-semibold tracking-tight">
@@ -27,6 +29,7 @@ function RootLayout() {
                         </Link>
                     </div>
                     <div className="flex items-center gap-3">
+                        {!isLoading && isAuthenticated && <AddTaskButton />}
                         {!isLoading && isAuthenticated && <AskAssistantButton />}
                         <ThemeToggle />
                         {!isLoading && isAuthenticated && <UserMenu />}
@@ -47,12 +50,13 @@ function RootLayout() {
             </header>
             <div className="flex min-h-0 flex-1 flex-col lg:flex-row lg:pr-3">
                 <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-                    <div className="mx-auto w-full max-w-3xl px-4 py-8">
+                    <div className="mx-auto w-full max-w-3xl px-4 py-5 sm:px-7">
                         <Outlet />
                     </div>
                 </main>
                 <AnimatePresence>{showSidebar && <AssistantSidebar />}</AnimatePresence>
             </div>
+            <AddTodoDialog />
         </div>
     );
 }

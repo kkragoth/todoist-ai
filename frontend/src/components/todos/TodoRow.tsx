@@ -89,7 +89,7 @@ export function TodoRow({ todo, flash, bucket }: { todo: Todo; flash: boolean; b
             transition={{ duration: 0.25 }}
             className={cn(
                 "group flex items-center gap-3 border-b border-border/50 last:border-b-0 hover:bg-muted/50",
-                compact ? "min-h-[40px] px-3 py-1" : "min-h-[52px] px-4 py-2",
+                compact ? "min-h-[40px] px-3 py-1" : "min-h-[48px] px-4 py-2",
                 todo.archived && "opacity-60",
                 flash && "todo-sse-flash",
             )}
@@ -100,7 +100,7 @@ export function TodoRow({ todo, flash, bucket }: { todo: Todo; flash: boolean; b
                 onClick={onToggle}
                 aria-label={todo.completed ? "Mark as open" : "Mark as done"}
                 className={cn(
-                    "flex size-[19px] shrink-0 items-center justify-center rounded-[5px] border-[1.5px] transition-colors",
+                    "flex size-[18px] shrink-0 items-center justify-center rounded-[5px] border-[1.5px] transition-colors",
                     isDone ? "border-muted-foreground bg-muted-foreground" : "border-border hover:border-foreground/40",
                 )}
             >
@@ -118,7 +118,7 @@ export function TodoRow({ todo, flash, bucket }: { todo: Todo; flash: boolean; b
             </button>
             <div className="min-w-0 flex-1">
                 <motion.p
-                    className={cn("truncate text-[14.5px]", isDone ? "text-todo-done" : "text-foreground")}
+                    className={cn("truncate text-[14px]", isDone ? "text-todo-done" : "text-foreground")}
                     initial={false}
                     animate={isDone ? { color: "var(--todo-done)" } : { color: "var(--foreground)" }}
                 >

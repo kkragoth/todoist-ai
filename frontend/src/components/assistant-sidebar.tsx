@@ -3,6 +3,7 @@ import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { motion } from "motion/react";
 import { Send, Square, X } from "lucide-react";
 import { AssistantMessages } from "@/components/assistant/AssistantMessages";
+import { CleanupRoomButton } from "@/components/assistant/CleanupRoomButton";
 import { StarterSuggestions } from "@/components/assistant/StarterSuggestions";
 import { Button } from "@/components/ui/button";
 import {
@@ -172,6 +173,7 @@ export function AssistantSidebar() {
                 {busy && <p className="self-start text-xs text-muted-foreground">{status}</p>}
             </div>
             {!busy && messages.length <= 2 && <StarterSuggestions suggestions={SUGGESTIONS} onSend={send} />}
+            {!busy && <CleanupRoomButton />}
             <form
                 className="flex items-center gap-2 border-t border-border/60 p-3"
                 onSubmit={(e) => {

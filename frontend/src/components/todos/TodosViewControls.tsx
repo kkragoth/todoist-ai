@@ -1,5 +1,6 @@
 import { ArrowUpDown, Rows3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { QuickDateFilter } from "@/components/todos/QuickDateFilter";
 import { ViewTabs } from "@/components/todos/ViewTabs";
 import {
     Density,
@@ -15,7 +16,7 @@ import {
 } from "@/lib/todos-view";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
-const VIEW_OPTIONS = [TodoView.List, TodoView.Grouped, TodoView.GroupedByDay];
+const VIEW_OPTIONS = [TodoView.List, TodoView.Grouped];
 
 function nextDensity(density: Density): Density {
     return toggleDensity(density);
@@ -39,7 +40,7 @@ export function TodosViewControls() {
     const showGroupControls = isGroupedView(view) || isGroupedByDayView(view);
 
     return (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
             <div
                 role="tablist"
                 aria-label="Todo layout"
@@ -47,6 +48,7 @@ export function TodosViewControls() {
             >
                 <ViewTabs options={VIEW_OPTIONS} selected={view} onSelect={setView} />
             </div>
+            {showListControls && <QuickDateFilter />}
             {showListControls && (
                 <span className="flex items-center gap-1.5">
                     <button

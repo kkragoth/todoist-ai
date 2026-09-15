@@ -12,7 +12,7 @@ import { useTodosQuery } from "@/hooks/useTodos";
 import { groupTodos, groupTodosByDay, sortTodos, type BucketGroup, type BucketWithDays } from "@/lib/todo-buckets";
 import { filterTodosFuzzy } from "@/lib/todo-search";
 import { isDoneStatus, isOpenStatus, todayISO } from "@/lib/todos-filters";
-import { isGroupedByDayView, isListView, toSortDirection } from "@/lib/todos-view";
+import { effectiveSearchForView, isGroupedByDayView, isListView, toSortDirection } from "@/lib/todos-view";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
 /** In grouped views done todos render inline at the end of their own bucket. */
@@ -68,11 +68,12 @@ function mergeDayGroups(open: BucketWithDays[], done: BucketWithDays[]): BucketW
 
 export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: boolean; authChecked: boolean }) {
     const search = useSearch({ from: "/todos" });
-    const todosQuery = useTodosQuery(search, isAuthenticated && authChecked);
+    const view = useTodosUiStore((s) => s.view);
+    const effectiveSearch = effectiveSearchForView(search, view);
+    const todosQuery = useTodosQuery(effectiveSearch, isAuthenticated && authChecked);
     const searchText = useTodosUiStore((s) => s.searchText);
     const doneExpanded = useTodosUiStore((s) => s.doneExpanded);
     const setDoneExpanded = useTodosUiStore((s) => s.setDoneExpanded);
-    const view = useTodosUiStore((s) => s.view);
     const listSort = useTodosUiStore((s) => s.listSort);
     const today = todayISO();
 
@@ -96,8 +97,6 @@ export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: bo
         if (isListView(view)) return open;
         return mergeDayGroups(open, groupTodosByDay(doneTodos, today));
     }, [openTodos, doneTodos, today, view]);
-    const openCount = openTodos.length;
-
     const showOpen = !isDoneStatus(search.status);
     const showList = isListView(view);
     const showByDay = isGroupedByDayView(view);
@@ -124,7 +123,7 @@ export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: bo
             )}
             {todosQuery.isSuccess && filtered.length === 0 && (
                 <p className="mt-4 rounded-xl border border-dashed bg-card py-8 text-center text-sm text-muted-foreground">
-                    Nothing here. Add your first todo above.
+                    Nothing here. Use Add task to create your first todo.
                 </p>
             )}
             {showOpen && showList && flatOpen.length > 0 && (
@@ -138,11 +137,6 @@ export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: bo
             )}
             {!showList && !showByDay && <TodoBucketSections groups={openGroups} />}
             {!showList && showByDay && <BucketGroupRows groups={openGroupsByDay} />}
-            {showOpen && openCount === 0 && todosQuery.isSuccess && filtered.length > 0 && (
-                <p className="mt-4 pl-0.5 text-sm text-muted-foreground">
-                    Nothing open in this view — add something above, or clear the filters.
-                </p>
-            )}
             {showDoneSection && doneTodos.length > 0 && (
                 <section className="mt-5">
                     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">

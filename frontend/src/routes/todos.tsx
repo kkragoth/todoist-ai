@@ -1,5 +1,4 @@
 import { Navigate, createFileRoute } from "@tanstack/react-router";
-import { TodoCreateForm } from "@/components/todos/TodoCreateForm";
 import { TodoList } from "@/components/todos/TodoList";
 import { TodosFilters } from "@/components/todos/TodosFilters";
 import { TodosViewControls } from "@/components/todos/TodosViewControls";
@@ -22,9 +21,8 @@ function TodosPage() {
 
     return (
         <div>
-            <TodoCreateForm />
-            <TodosFilters />
             <TodosViewControls />
+            <TodosFilters />
             <TodoList isAuthenticated={isAuthenticated} authChecked={!isLoading} />
         </div>
     );

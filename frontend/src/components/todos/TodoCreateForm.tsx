@@ -40,7 +40,8 @@ export function TodoCreateForm() {
             <form onSubmit={onAdd} className="rounded-xl border border-border bg-card p-3 shadow-sm">
                 <div className="flex items-center gap-2">
                     <input
-                        className="h-10 flex-1 bg-transparent px-1 text-[15px] outline-none placeholder:text-muted-foreground/60"
+                        autoFocus
+                        className="h-9 flex-1 bg-transparent px-1 text-[14px] outline-none placeholder:text-muted-foreground/60"
                         placeholder="Add a task — try “clean up my room tomorrow”"
                         value={newTask}
                         onChange={(e) => setNewTask(e.target.value)}
@@ -61,12 +62,6 @@ export function TodoCreateForm() {
                         {preview}
                     </p>
                 )}
-                <p
-                    className="mt-1.5 truncate text-xs text-muted-foreground/70"
-                    title="Dates typed in the text fill the date field automatically"
-                >
-                    Tip: type “tomorrow”, “fri” or “next week” — the date fills in.
-                </p>
             </form>
             {formError && <p className="mt-2 text-sm text-destructive">{formError}</p>}
         </div>

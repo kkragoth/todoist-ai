@@ -22,7 +22,9 @@ export function useCreateTodo() {
     return useMutation({
         mutationFn: (input: { task: string; todo_date: string | null }) => createTodo(input),
         onSuccess: () => {
-            useTodosUiStore.getState().resetForm();
+            const ui = useTodosUiStore.getState();
+            ui.resetForm();
+            if (ui.isAddOpen) ui.closeAddModal();
             invalidate();
         },
         onError: (err) => {

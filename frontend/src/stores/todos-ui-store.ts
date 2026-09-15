@@ -10,6 +10,7 @@ interface TodosUiState {
     formError: string | null;
     searchText: string;
     assistantOpen: boolean;
+    isAddOpen: boolean;
     doneExpanded: boolean;
     view: TodoView;
     listSort: ListSort;
@@ -24,6 +25,9 @@ interface TodosUiState {
     setFormError: (error: string | null) => void;
     setSearchText: (text: string) => void;
     setAssistantOpen: (open: boolean) => void;
+    setAddOpen: (open: boolean) => void;
+    openAddModal: () => void;
+    closeAddModal: () => void;
     setDoneExpanded: (expanded: boolean) => void;
     setView: (view: TodoView) => void;
     setListSort: (sort: ListSort) => void;
@@ -45,6 +49,7 @@ export const useTodosUiStore = create<TodosUiState>()((set) => ({
     formError: null,
     searchText: "",
     assistantOpen: false,
+    isAddOpen: false,
     doneExpanded: false,
     view: TodoView.Grouped,
     listSort: ListSort.Asc,
@@ -57,6 +62,9 @@ export const useTodosUiStore = create<TodosUiState>()((set) => ({
     setFormError: (formError) => set({ formError }),
     setSearchText: (searchText) => set({ searchText }),
     setAssistantOpen: (assistantOpen) => set({ assistantOpen }),
+    setAddOpen: (isAddOpen) => set({ isAddOpen }),
+    openAddModal: () => set({ isAddOpen: true }),
+    closeAddModal: () => set({ isAddOpen: false }),
     setDoneExpanded: (doneExpanded) => set({ doneExpanded }),
     setView: (view) => set({ view }),
     setListSort: (listSort) => set({ listSort }),

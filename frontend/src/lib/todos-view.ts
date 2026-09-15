@@ -1,4 +1,5 @@
 import { SortDirection, TodoBucket } from "@/lib/todo-buckets";
+import { DatePreset, stripDatesUnlessCustom, type TodosSearchParams } from "@/lib/todos-filters";
 
 export enum TodoView {
     List = "list",
@@ -70,6 +71,21 @@ export function isGroupedByDayView(view: TodoView): boolean {
         case TodoView.List:
         case TodoView.Grouped:
             return false;
+    }
+}
+
+/**
+ * The quick date picker is list-only. Grouped views ignore `date_preset`
+ * (and custom range) so buckets always cover everything; the URL param is
+ * kept so switching back to List restores the previous pick.
+ */
+export function effectiveSearchForView(search: TodosSearchParams, view: TodoView): TodosSearchParams {
+    switch (view) {
+        case TodoView.List:
+            return search;
+        case TodoView.Grouped:
+        case TodoView.GroupedByDay:
+            return stripDatesUnlessCustom({ ...search, date_preset: DatePreset.All });
     }
 }
 
