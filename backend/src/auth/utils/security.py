@@ -30,10 +30,20 @@ def create_access_token(data: dict) -> str:
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
+def decode_access_token(token: str) -> dict:
+    """Decode a JWT access token into its claims.
+
+    Single decode path shared by the HTTP auth dependency and the MCP
+    server, so both reject expired/forged tokens identically. Raises
+    `jwt.PyJWTError` (or KeyError-free dict) on bad tokens; callers map
+    failures to their own transport error shape.
+    """
+    return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     from auth.models import User
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = decode_access_token(token)
         username: str = payload.get("sub")
         if not username:
             raise HTTPException(status_code=401, detail="Invalid token")
