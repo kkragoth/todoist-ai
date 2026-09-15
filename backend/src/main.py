@@ -11,9 +11,16 @@ from mcp_server import mcp
 
 ensure_schema()
 
-app = FastAPI(title="Todoist AI")
+# Streamable HTTP (current MCP spec; SSE transport is deprecated).
+# path="/" because the app is mounted at /mcp, so the endpoint is POST /mcp/.
+# Stateless: every request carries its own Authorization header, no session resume needed.
+# lifespan=mcp_app.lifespan: FastMCP's session manager only starts when the
+# parent app runs its lifespan (required when mounting into FastAPI/Starlette).
+mcp_app = mcp.http_app(path="/", transport="streamable-http", stateless_http=True)
 
-app.mount("/mcp", mcp.http_app(transport="sse"))
+app = FastAPI(title="Todoist AI", lifespan=mcp_app.lifespan)
+
+app.mount("/mcp", mcp_app)
 app.include_router(auth_router)
 app.include_router(todo_router)
 app.include_router(chat_router)

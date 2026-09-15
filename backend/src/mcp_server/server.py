@@ -1,6 +1,7 @@
-"""FastMCP instance. Tools live in tools.py and register themselves on
-this instance via @mcp.tool(). Imported (not defined) here by tools.py,
-so this module stays dependency-free and import-cycle safe."""
+"""FastMCP instance. Tools/resources/prompts live in their own modules
+and register themselves on this instance via decorators. Imported (not
+defined) here by those modules, so this file stays dependency-free and
+import-cycle safe."""
 
 from fastmcp import FastMCP
 

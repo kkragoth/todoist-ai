@@ -1,4 +1,18 @@
 import { apiClearHistory, apiListThreads } from "@/api.js";
+import {
+    closeMcpClients,
+    mcpAdd,
+    mcpArchive,
+    mcpDelete,
+    mcpList,
+    mcpListPrompts,
+    mcpListResources,
+    mcpListTools,
+    mcpRead,
+    mcpSetDone,
+    mcpStatus,
+    parseTodoId,
+} from "@/lib/mcp-direct.js";
 import { parseSlash } from "@/lib/slash.js";
 import { isThreadId } from "@/lib/text.js";
 import { useAuthStore } from "@/stores/auth-store.js";
@@ -13,10 +27,37 @@ export async function handleSlashCommand(raw: string): Promise<void> {
     const session = useSessionStore.getState();
     const chat = useChatStore.getState();
     const { name, arg } = parsed;
+    /** Auth guard for MCP-direct commands (same JWT file as chat). */
+    const mcpAuth = (): { apiUrl: string; token: string } | null => {
+        const s = useSessionStore.getState();
+        if (!s.token) {
+            useChatStore.getState().pushSystem("Not logged in — log in first.");
+            return null;
+        }
+        return { apiUrl: s.apiUrl, token: s.token };
+    };
+    /** Run one MCP-direct op and print the result (bypasses the LLM). */
+    const runMcp = async (fn: (auth: { apiUrl: string; token: string }) => Promise<string>): Promise<void> => {
+        const auth = mcpAuth();
+        if (!auth) return;
+        try {
+            useChatStore.getState().pushSystem(await fn(auth));
+        } catch (e) {
+            useChatStore.getState().pushSystem(e instanceof Error ? e.message : String(e));
+        }
+    };
+    const needId = (what: string): number | null => {
+        const id = parseTodoId(arg);
+        if (id === null) chat.pushSystem(`Usage: /${what} <id> — pick an ID from /list.`);
+        return id;
+    };
     switch (name) {
         case "help":
             chat.pushSystem(
                 "/clear · /thread [id] · /threads · /sessions · /provider [name] · /model [name] · /logout · /quit — esc cancels a turn",
+            );
+            chat.pushSystem(
+                "MCP direct (bypasses LLM): /mcp [on|off|status] · /tools · /resources · /prompts · /list [query] · /read <id> · /add <task> · /done <id> · /reopen <id> · /archive <id> · /delete <id>",
             );
             break;
         case "clear": {
@@ -91,6 +132,7 @@ export async function handleSlashCommand(raw: string): Promise<void> {
             break;
         case "logout":
             session.signOut();
+            void closeMcpClients();
             chat.clearFeed();
             useAuthStore.getState().reset();
             break;
@@ -98,6 +140,72 @@ export async function handleSlashCommand(raw: string): Promise<void> {
         case "exit":
             process.exit(0);
             break;
+        case "mcp": {
+            const mode = arg.toLowerCase();
+            if (mode === "on") {
+                session.setMcpDirect(true);
+                chat.pushSystem(
+                    "MCP direct mode ON — plain text lists via MCP, /add /done write. /mcp off for LLM chat.",
+                );
+            } else if (mode === "off") {
+                session.setMcpDirect(false);
+                chat.pushSystem("MCP direct mode OFF — plain text goes to the LLM again.");
+            } else if (mode === "" || mode === "status") {
+                await runMcp((auth) => mcpStatus(auth.apiUrl, auth.token));
+                chat.pushSystem(
+                    session.mcpDirect
+                        ? "Direct mode is ON (plain text bypasses the LLM)."
+                        : "Direct mode is OFF (plain text goes to the LLM).",
+                );
+            } else {
+                chat.pushSystem("Usage: /mcp [on|off|status]");
+            }
+            break;
+        }
+        case "tools":
+            await runMcp((auth) => mcpListTools(auth.apiUrl, auth.token));
+            break;
+        case "resources":
+            await runMcp((auth) => mcpListResources(auth.apiUrl, auth.token));
+            break;
+        case "prompts":
+            await runMcp((auth) => mcpListPrompts(auth.apiUrl, auth.token));
+            break;
+        case "list":
+            await runMcp((auth) => mcpList(auth.apiUrl, auth.token, arg || undefined));
+            break;
+        case "read": {
+            const id = needId("read");
+            if (id !== null) await runMcp((auth) => mcpRead(auth.apiUrl, auth.token, id));
+            break;
+        }
+        case "add":
+            if (!arg) {
+                chat.pushSystem("Usage: /add <task> — e.g. /add buy milk");
+            } else {
+                await runMcp((auth) => mcpAdd(auth.apiUrl, auth.token, arg));
+            }
+            break;
+        case "done": {
+            const id = needId("done");
+            if (id !== null) await runMcp((auth) => mcpSetDone(auth.apiUrl, auth.token, id, true));
+            break;
+        }
+        case "reopen": {
+            const id = needId("reopen");
+            if (id !== null) await runMcp((auth) => mcpSetDone(auth.apiUrl, auth.token, id, false));
+            break;
+        }
+        case "archive": {
+            const id = needId("archive");
+            if (id !== null) await runMcp((auth) => mcpArchive(auth.apiUrl, auth.token, id));
+            break;
+        }
+        case "delete": {
+            const id = needId("delete");
+            if (id !== null) await runMcp((auth) => mcpDelete(auth.apiUrl, auth.token, id));
+            break;
+        }
         default:
             chat.pushSystem(`Unknown command "/${name}". Try /help.`);
             break;

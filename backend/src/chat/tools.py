@@ -83,6 +83,10 @@ class ArchiveTodoArgs(BaseModel):
     todo_id: int = Field(description="The ID of the task to archive.")
 
 
+class DeleteTodoArgs(BaseModel):
+    todo_id: int = Field(description="The ID of the task to permanently delete.")
+
+
 class AskUserArgs(BaseModel):
     question: str = Field(
         min_length=1,
@@ -230,6 +234,11 @@ def build_tools_for_user(
             todo_service.archive_todo, user_id, todo_id=todo_id
         )
 
+    async def delete_todo_tool(todo_id: int) -> str:
+        return await asyncio.to_thread(
+            todo_service.delete_todo, user_id, todo_id=todo_id
+        )
+
     async def ask_user_tool(question: str, options: list[str] | None = None) -> str:
         """Terminal clarification hook. The service intercepts this call,
         emits an `ask_user` SSE event, and ends the turn — the returned
@@ -337,8 +346,21 @@ def build_tools_for_user(
         StructuredTool.from_function(
             coroutine=archive_todo_tool,
             name=ToolName.ARCHIVE_TODO.value,
-            description="Archive a todo task so it is hidden from normal listings.",
+            description=(
+                "Archive a todo task so it is hidden from normal listings. "
+                "Prefer this over delete_todo unless the user says delete/remove permanently."
+            ),
             args_schema=ArchiveTodoArgs,
+        ),
+        StructuredTool.from_function(
+            coroutine=delete_todo_tool,
+            name=ToolName.DELETE_TODO.value,
+            description=(
+                "Permanently delete a todo task (hard delete, cannot be undone). "
+                "Only use when the user explicitly says delete/remove permanently; "
+                "otherwise prefer archive_todo."
+            ),
+            args_schema=DeleteTodoArgs,
         ),
         StructuredTool.from_function(
             coroutine=ask_user_tool,

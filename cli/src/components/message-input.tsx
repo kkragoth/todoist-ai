@@ -1,6 +1,7 @@
 import type { InputRenderable } from "@opentui/core";
 import type { RefObject } from "react";
 import { submitChatText } from "@/lib/chat-turn.js";
+import { submitDirectText } from "@/lib/mcp-direct.js";
 import { handleSlashCommand } from "@/lib/slash-commands.js";
 import { submittedText } from "@/lib/text.js";
 import { useChatStore } from "@/stores/chat-store.js";
@@ -23,6 +24,12 @@ export function MessageInput({ inputRef }: { inputRef: RefObject<InputRenderable
         if (!text || !useSessionStore.getState().token) return;
         if (text.startsWith("/")) {
             void handleSlashCommand(text);
+            return;
+        }
+        // MCP direct mode: plain text is a read-only MCP list (fuzzy query),
+        // bypassing the LLM. Writes stay on explicit /add /done commands.
+        if (useSessionStore.getState().mcpDirect) {
+            void submitDirectText(text);
             return;
         }
         submitChatText(text);

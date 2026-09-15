@@ -46,6 +46,7 @@ class ToolName(StrEnum):
     ADD_TODO = "add_todo"
     UPDATE_TODO = "update_todo"
     ARCHIVE_TODO = "archive_todo"
+    DELETE_TODO = "delete_todo"
     ASK_USER = "ask_user"
     SET_TODOS_FILTER = "set_todos_filter"
     SET_TODOS_VIEW = "set_todos_view"
