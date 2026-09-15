@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { DateField } from "@/components/todos/DateField";
 import { useCreateTodo } from "@/hooks/useTodos";
-import { naturalDateISO, naturalDatePreview } from "@/lib/todo-buckets";
+import { naturalDateISO, naturalDatePreview } from "@/lib/natural-date";
 import { formatDateButtonLabel } from "@/lib/dates";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 

@@ -17,9 +17,9 @@ DATABASE_URL = _settings.database_url
 
 def _normalize_url(url: str) -> str:
     if url.startswith("postgres://"):
-        return "postgresql+psycopg://" + url[len("postgres://") :]
+        return "postgresql+psycopg://" + url.removeprefix("postgres://")
     if url.startswith("postgresql://"):
-        return "postgresql+psycopg://" + url[len("postgresql://") :]
+        return "postgresql+psycopg://" + url.removeprefix("postgresql://")
     return url
 
 
@@ -37,6 +37,7 @@ else:
         pool_size=_settings.db_pool_size,
         max_overflow=_settings.db_max_overflow,
         pool_timeout=_settings.db_pool_timeout_seconds,
+        pool_recycle=1800,
         connect_args={
             "connect_timeout": _settings.db_connect_timeout_seconds,
         },
@@ -46,7 +47,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
-def ensure_schema():
+def ensure_schema() -> None:
     """Create missing tables/columns (dev convenience, not a full migration).
 
     `create_all` only creates missing tables, never adds columns, so the
@@ -54,12 +55,12 @@ def ensure_schema():
     ALTER on pre-existing databases. Safe to run repeatedly on both
     sqlite and postgres; no-ops when the column already exists.
     """
-    from todo import models as _todo_models  # noqa: F401
-    from auth import models as _auth_models  # noqa: F401
+    from auth import models as auth_models  # noqa: F401 - register tables
+    from todo import models as todo_models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
     try:
-        cols = {c["name"] for c in inspect(engine).get_columns("todos")}
+        cols = {col["name"] for col in inspect(engine).get_columns("todos")}
     except Exception:
         return
     if "archived" not in cols:
@@ -70,6 +71,10 @@ def ensure_schema():
         )
         with engine.begin() as conn:
             conn.execute(text(alter))
+    else:
+        # Backfill legacy NULLs from before the column had a default.
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE todos SET archived = FALSE WHERE archived IS NULL"))
 
 
 def get_db():

@@ -205,6 +205,21 @@ export function dueToneOf(dateISO: string | null | undefined, today: string = to
     return DueTone.Neutral;
 }
 
+/** Tailwind classes for the due-date chip. Completed tasks stay neutral. */
+export function dueToneClass(dateISO: string, today: string, completed: boolean): string {
+    if (completed) {
+        return "border-transparent bg-muted text-muted-foreground";
+    }
+    const tone = dueToneOf(dateISO, today);
+    if (isOverdueTone(tone)) {
+        return "border-transparent bg-red-500/15 text-red-600 dark:border-overdue-border dark:bg-overdue-dim dark:text-overdue-text";
+    }
+    if (isTodayTone(tone)) {
+        return "border-transparent bg-amber-500/20 text-amber-700 dark:border-transparent dark:bg-gold/15 dark:text-gold";
+    }
+    return "border-transparent bg-muted text-muted-foreground";
+}
+
 export function isOverdueTone(tone: DueTone): boolean {
     switch (tone) {
         case DueTone.Overdue:
@@ -264,57 +279,12 @@ export function isAllDone(todos: Pick<Todo, "completed">[]): boolean {
     return todos.length > 0 && todos.every((todo) => todo.completed);
 }
 
-export interface NaturalDateHit {
-    offset: number;
-    label: string;
-}
-
-const NATURAL_PATTERNS: { re: RegExp; offset: number; label: string }[] = [
-    { re: /\bnext week\b/i, offset: 7, label: "Next week" },
-    { re: /\btomorrow\b/i, offset: 1, label: "Tomorrow" },
-    { re: /\btoday\b/i, offset: 0, label: "Today" },
-    { re: /\byesterday\b/i, offset: -1, label: "Yesterday" },
-    { re: /\bmonday\b/i, offset: 0, label: "Monday" },
-    { re: /\bfriday\b/i, offset: 0, label: "Friday" },
-];
-
-function shiftISO(iso: string, days: number): string {
-    const d = new Date(`${iso}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + days);
-    return d.toISOString().slice(0, 10);
-}
-
-function nextWeekdayOffset(today: string, weekday: number): number {
-    const base = new Date(`${today}T00:00:00Z`).getUTCDay();
-    const delta = (weekday - base + 7) % 7;
-    return delta === 0 ? 7 : delta;
-}
-
-export function detectNaturalDate(text: string, today: string = todayISO()): NaturalDateHit | null {
-    const lower = text.toLowerCase();
-    if (/\bnext week\b/i.test(text)) return { offset: 7, label: "Next week" };
-    if (/\btomorrow\b/i.test(text)) return { offset: 1, label: "Tomorrow" };
-    if (/\btoday\b/i.test(text)) return { offset: 0, label: "Today" };
-    if (/\byesterday\b/i.test(text)) return { offset: -1, label: "Yesterday" };
-    if (/\bmonday\b/.test(lower)) return { offset: nextWeekdayOffset(today, 1), label: "Monday" };
-    if (/\bfriday\b/.test(lower)) return { offset: nextWeekdayOffset(today, 5), label: "Friday" };
-    return null;
-}
-
-export function naturalDateISO(text: string, today: string = todayISO()): string | null {
-    const hit = detectNaturalDate(text, today);
-    if (!hit) return null;
-    return shiftISO(today, hit.offset);
-}
-
-export function naturalDatePreview(text: string, today: string = todayISO()): string | null {
-    const hit = detectNaturalDate(text, today);
-    if (!hit) return null;
-    const iso = shiftISO(today, hit.offset);
-    const dt = new Date(`${iso}T00:00:00Z`);
-    return `→ due ${hit.label}, ${dt.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })}`;
-}
-
-export function hasNaturalDate(text: string): boolean {
-    return NATURAL_PATTERNS.some((pattern) => pattern.re.test(text));
-}
+// Natural-language date helpers live in `lib/natural-date.ts`. Re-exported
+// here so existing `todo-buckets` import sites keep working.
+export {
+    detectNaturalDate,
+    hasNaturalDate,
+    naturalDateISO,
+    naturalDatePreview,
+    type NaturalDateHit,
+} from "@/lib/natural-date";

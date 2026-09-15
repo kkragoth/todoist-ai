@@ -212,14 +212,14 @@ code {
 .dark {
     --text: #9a9a9f;
     --text-h: #ededee;
-    --bg: #0b0b0c;
+    --bg: #131315;
     --border: oklch(1 0 0 / 10%);
     --code-bg: #1a1a1d;
-    --background: #0b0b0c;
+    --background: #131315;
     --foreground: #ededee;
-    --card: #131315;
+    --card: #0b0b0c;
     --card-foreground: #ededee;
-    --popover: #131315;
+    --popover: #0b0b0c;
     --popover-foreground: #ededee;
     --primary: #d9a441;
     --primary-foreground: #211705;
@@ -239,7 +239,7 @@ code {
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: #131315;
+    --sidebar: #0b0b0c;
     --sidebar-foreground: #ededee;
     --sidebar-primary: #d9a441;
     --sidebar-primary-foreground: #211705;

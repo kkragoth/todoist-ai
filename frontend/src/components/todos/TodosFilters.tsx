@@ -1,16 +1,11 @@
 import { useMemo } from "react";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useSearch } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { SegmentedControl } from "@/components/todos/SegmentedControl";
 import { useTodosQuery } from "@/hooks/useTodos";
+import { useUpdateTodosSearch } from "@/hooks/useTodosSearch";
 import { filterTodosFuzzy } from "@/lib/todo-search";
-import {
-    TodoStatus,
-    parseTodoStatusStrict,
-    statusLabel,
-    stripDatesUnlessCustom,
-    type TodosSearchParams,
-} from "@/lib/todos-filters";
+import { TodoStatus, parseTodoStatusStrict, statusLabel } from "@/lib/todos-filters";
 import { effectiveSearchForView } from "@/lib/todos-view";
 import { useAuth } from "@/lib/auth";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
@@ -19,7 +14,7 @@ const STATUS_OPTIONS = [TodoStatus.All, TodoStatus.Open, TodoStatus.Done];
 
 export function TodosFilters() {
     const search = useSearch({ from: "/todos" });
-    const navigate = useNavigate({ from: "/todos" });
+    const updateSearch = useUpdateTodosSearch();
     const searchText = useTodosUiStore((s) => s.searchText);
     const setSearchText = useTodosUiStore((s) => s.setSearchText);
     const view = useTodosUiStore((s) => s.view);
@@ -44,10 +39,6 @@ export function TodosFilters() {
             case TodoStatus.Done:
                 return counts.done;
         }
-    }
-
-    function updateSearch(patch: Partial<TodosSearchParams>) {
-        navigate({ to: "/todos", search: stripDatesUnlessCustom({ ...search, ...patch }) });
     }
 
     function selectStatus(value: string) {

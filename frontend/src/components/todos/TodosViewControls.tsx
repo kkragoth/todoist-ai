@@ -3,8 +3,6 @@ import { Button } from "@/components/ui/button";
 import { QuickDateFilter } from "@/components/todos/QuickDateFilter";
 import { ViewTabs } from "@/components/todos/ViewTabs";
 import {
-    Density,
-    ListSort,
     TodoView,
     densityLabel,
     isGroupedByDayView,
@@ -18,19 +16,10 @@ import { useTodosUiStore } from "@/stores/todos-ui-store";
 
 const VIEW_OPTIONS = [TodoView.List, TodoView.Grouped];
 
-function nextDensity(density: Density): Density {
-    return toggleDensity(density);
-}
-
-function nextSort(sort: ListSort): ListSort {
-    return toggleListSort(sort);
-}
-
 export function TodosViewControls() {
     const view = useTodosUiStore((s) => s.view);
     const listSort = useTodosUiStore((s) => s.listSort);
     const density = useTodosUiStore((s) => s.density);
-    const setView = useTodosUiStore((s) => s.setView);
     const setListSort = useTodosUiStore((s) => s.setListSort);
     const setDensity = useTodosUiStore((s) => s.setDensity);
     const expandAllBuckets = useTodosUiStore((s) => s.expandAllBuckets);
@@ -46,7 +35,7 @@ export function TodosViewControls() {
                 aria-label="Todo layout"
                 className="flex items-center gap-0.5 rounded-full border border-border bg-card p-0.5"
             >
-                <ViewTabs options={VIEW_OPTIONS} selected={view} onSelect={setView} />
+                <ViewTabs options={VIEW_OPTIONS} />
             </div>
             {showListControls && <QuickDateFilter />}
             {showListControls && (
@@ -54,7 +43,7 @@ export function TodosViewControls() {
                     <button
                         type="button"
                         title="Toggle sort direction"
-                        onClick={() => setListSort(nextSort(listSort))}
+                        onClick={() => setListSort(toggleListSort(listSort))}
                         className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                     >
                         <ArrowUpDown className="size-3.5" />
@@ -63,7 +52,7 @@ export function TodosViewControls() {
                     <button
                         type="button"
                         title="Toggle row density"
-                        onClick={() => setDensity(nextDensity(density))}
+                        onClick={() => setDensity(toggleDensity(density))}
                         className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground"
                     >
                         <Rows3 className="size-3.5" />

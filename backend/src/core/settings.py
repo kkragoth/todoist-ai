@@ -15,10 +15,13 @@ at startup with a different error).
 
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
 class LlmProvider(StrEnum):
@@ -28,7 +31,7 @@ class LlmProvider(StrEnum):
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(_BACKEND_DIR / ".env"), extra="ignore")
 
     # Chat provider selection.
     llm_provider: str = "ollama"
@@ -69,6 +72,9 @@ class Settings(BaseSettings):
     secret_key: str = "SUPER_SECRET_KEY_CHANGE_IN_PRODUCTION"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
+
+    # Web.
+    frontend_origins: str = "http://localhost:3000,http://localhost:5173"
 
     @field_validator("llm_provider", mode="before")
     @classmethod
