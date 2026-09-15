@@ -1,1 +1,4 @@
 Don't overuse _underscore_vars for code readability
+Model wire state as enums: define `StrEnum` + typed mappings in `src/chat/protocol.py` (event types, widget kinds, tool names, ui_action names, client kinds/capabilities, filter/view/sort/density values) and import them in `schemas.py`/`tools.py`/`service.py`; never compare raw string literals (e.g. `name == "ask_user"`, `"ui_action" in caps`, `widget == "todo_list"`) at call sites.
+Keep shared caps in one place: `MAX_SUGGESTIONS` / `MAX_SUGGESTION_CHARS` / `UI_DATA_MAX_ROWS` / `HIGHLIGHT_MAX_IDS` live in `protocol.py` (re-exported by `config.py`); never hardcode `4`, `40`, `30`, `20` at call sites.
+Validate at the boundary with `isinstance` and pydantic `Enum` fields (strict `Literal`/`Enum` on LLM tool args, `normalize_capabilities` for client input); never use `__class__.__name__ == "..."` checks or `Optional[str]` for closed value sets.

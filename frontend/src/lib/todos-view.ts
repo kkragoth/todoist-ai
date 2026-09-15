@@ -19,6 +19,19 @@ export function parseTodoView(value: unknown): TodoView {
     }
 }
 
+export function parseTodoViewStrict(value: unknown): TodoView | null {
+    switch (value) {
+        case TodoView.List:
+            return TodoView.List;
+        case TodoView.Grouped:
+            return TodoView.Grouped;
+        case TodoView.GroupedByDay:
+            return TodoView.GroupedByDay;
+        default:
+            return null;
+    }
+}
+
 export function viewLabel(view: TodoView): string {
     switch (view) {
         case TodoView.List:
@@ -65,6 +78,17 @@ export enum ListSort {
     Desc = "desc",
 }
 
+export function parseListSort(value: unknown): ListSort | null {
+    switch (value) {
+        case ListSort.Asc:
+            return ListSort.Asc;
+        case ListSort.Desc:
+            return ListSort.Desc;
+        default:
+            return null;
+    }
+}
+
 export function sortLabel(sort: ListSort): string {
     switch (sort) {
         case ListSort.Asc:
@@ -104,6 +128,17 @@ export function toSortDirection(sort: ListSort): SortDirection {
 export enum Density {
     Comfortable = "comfortable",
     Compact = "compact",
+}
+
+export function parseDensity(value: unknown): Density | null {
+    switch (value) {
+        case Density.Comfortable:
+            return Density.Comfortable;
+        case Density.Compact:
+            return Density.Compact;
+        default:
+            return null;
+    }
 }
 
 export function densityLabel(density: Density): string {

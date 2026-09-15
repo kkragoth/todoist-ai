@@ -68,6 +68,7 @@ async def chat(
             thread_id=tid,
             provider=provider,
             model=model,
+            client=body.client,
             is_disconnected=request.is_disconnected,
         ):
             yield f"data: {json.dumps(event)}\n\n"

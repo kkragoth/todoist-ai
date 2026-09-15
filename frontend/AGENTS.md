@@ -3,4 +3,5 @@ Model state as ADTs: use `enum` + discriminated unions with exhaustive `switch` 
 Do not prop-drill shared state through components; lift shared UI state into React context (e.g. theme, auth) or a zustand store (e.g. todos UI) and pass data down, not setters.
 Prefer `cond && <Component />` over `cond ? (...) : null` for conditional rendering; reserve ternaries for true either/or branches.
 Keep components small and single-purpose; extract screen sections into `src/components/` instead of growing route files — views read zustand stores and lib helpers, never setters through props.
+Extract repeated lists into plural container + singular item components (e.g. `<Chips>` rendering one `<Chip>` per row); never inline `array.map(...)` with inline JSX for the item — the item must be its own component receiving the value + callback as props, keyed stably at the map site. Keep one component per file: the plural container and the singular item each live in their own file (e.g. `Chips.tsx` + `Chip.tsx`).
 Indent with 4 spaces (tab width 4, enforced via `prettier --check` + `.editorconfig`); keep `tsc`, `oxlint`, and `vite build` clean.

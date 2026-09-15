@@ -1,5 +1,6 @@
 import { ArrowUpDown, Rows3 } from "lucide-react";
-import { cn } from "cn";
+import { Button } from "@/components/ui/button";
+import { ViewTabs } from "@/components/todos/ViewTabs";
 import {
     Density,
     ListSort,
@@ -11,7 +12,6 @@ import {
     sortLabel,
     toggleDensity,
     toggleListSort,
-    viewLabel,
 } from "@/lib/todos-view";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
@@ -45,23 +45,7 @@ export function TodosViewControls() {
                 aria-label="Todo layout"
                 className="flex items-center gap-0.5 rounded-full border border-border bg-card p-0.5"
             >
-                {VIEW_OPTIONS.map((option) => (
-                    <button
-                        key={option}
-                        role="tab"
-                        aria-selected={view === option}
-                        type="button"
-                        onClick={() => setView(option)}
-                        className={cn(
-                            "rounded-full px-3 py-1 text-[13px] font-medium transition-colors",
-                            view === option
-                                ? "bg-primary text-primary-foreground"
-                                : "text-muted-foreground hover:text-foreground",
-                        )}
-                    >
-                        {viewLabel(option)}
-                    </button>
-                ))}
+                <ViewTabs options={VIEW_OPTIONS} selected={view} onSelect={setView} />
             </div>
             {showListControls && (
                 <span className="flex items-center gap-1.5">
@@ -86,22 +70,13 @@ export function TodosViewControls() {
                 </span>
             )}
             {showGroupControls && (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <button
-                        type="button"
-                        onClick={expandAllBuckets}
-                        className="rounded px-1.5 py-0.5 hover:text-foreground"
-                    >
+                <span className="flex items-center gap-1.5">
+                    <Button type="button" variant="outline" size="xs" onClick={expandAllBuckets}>
                         Expand all
-                    </button>
-                    <span aria-hidden="true">·</span>
-                    <button
-                        type="button"
-                        onClick={collapseAllBuckets}
-                        className="rounded px-1.5 py-0.5 hover:text-foreground"
-                    >
+                    </Button>
+                    <Button type="button" variant="outline" size="xs" onClick={collapseAllBuckets}>
                         Collapse all
-                    </button>
+                    </Button>
                 </span>
             )}
         </div>

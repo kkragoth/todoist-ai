@@ -1,15 +1,18 @@
 import { useMemo } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { cn } from "cn";
-import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/todos/DateField";
+import { SegmentedControl } from "@/components/todos/SegmentedControl";
 import { useTodosQuery } from "@/hooks/useTodos";
 import { filterTodosFuzzy } from "@/lib/todo-search";
+import { formatDateButtonLabel } from "@/lib/dates";
 import {
     DatePreset,
     TodoStatus,
     datePresetLabel,
     defaultCustomDateRange,
+    parseDatePresetStrict,
+    parseTodoStatusStrict,
     statusLabel,
     stripDatesUnlessCustom,
     type TodosSearchParams,
@@ -17,9 +20,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
-const STATUS_OPTIONS = [TodoStatus.All, TodoStatus.Open, TodoStatus.Done];
-
-const PRESET_OPTIONS = [
+const DATE_PRESETS = [
     DatePreset.All,
     DatePreset.Overdue,
     DatePreset.Today,
@@ -28,6 +29,8 @@ const PRESET_OPTIONS = [
     DatePreset.Later,
     DatePreset.Custom,
 ];
+
+const STATUS_OPTIONS = [TodoStatus.All, TodoStatus.Open, TodoStatus.Done];
 
 export function TodosFilters() {
     const search = useSearch({ from: "/todos" });
@@ -67,40 +70,39 @@ export function TodosFilters() {
         updateSearch({ date_preset: preset });
     }
 
+    function selectPreset(value: string) {
+        const preset = parseDatePresetStrict(value);
+        if (preset) goToPreset(preset);
+    }
+
+    function selectStatus(value: string) {
+        const status = parseTodoStatusStrict(value);
+        if (status) updateSearch({ status });
+    }
+
     return (
         <div className="mt-4 flex flex-col gap-2.5">
             <div className="flex flex-wrap items-center gap-1.5">
-                {PRESET_OPTIONS.map((preset) => (
-                    <button
-                        key={preset}
-                        type="button"
-                        onClick={() => goToPreset(preset)}
-                        className={cn(
-                            "rounded-full border px-3 py-1 text-[13px] font-medium transition-colors",
-                            search.date_preset === preset
-                                ? "border-primary bg-primary text-primary-foreground"
-                                : "border-border bg-card text-muted-foreground hover:border-foreground/30 hover:text-foreground",
-                        )}
-                    >
-                        {datePresetLabel(preset)}
-                    </button>
-                ))}
+                <SegmentedControl
+                    label="Filter by date"
+                    items={DATE_PRESETS.map((preset) => ({ value: preset, label: datePresetLabel(preset) }))}
+                    selected={search.date_preset}
+                    onSelect={selectPreset}
+                />
                 {search.date_preset === DatePreset.Custom && (
                     <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                        <input
-                            type="date"
-                            aria-label="Start date"
-                            className="h-7 rounded-md border border-input bg-card px-2 text-xs outline-none"
+                        <DateField
                             value={search.start_date ?? ""}
-                            onChange={(e) => updateSearch({ start_date: e.target.value })}
+                            onChange={(iso) => updateSearch({ start_date: iso })}
+                            label={formatDateButtonLabel(search.start_date ?? "", "Start")}
+                            ariaLabel="Start date"
                         />
                         <span>→</span>
-                        <input
-                            type="date"
-                            aria-label="End date"
-                            className="h-7 rounded-md border border-input bg-card px-2 text-xs outline-none"
+                        <DateField
                             value={search.end_date ?? ""}
-                            onChange={(e) => updateSearch({ end_date: e.target.value })}
+                            onChange={(iso) => updateSearch({ end_date: iso })}
+                            label={formatDateButtonLabel(search.end_date ?? "", "End")}
+                            ariaLabel="End date"
                         />
                     </span>
                 )}
@@ -124,19 +126,15 @@ export function TodosFilters() {
                         </button>
                     )}
                 </label>
-                <span className="flex shrink-0 items-center gap-1.5">
-                    {STATUS_OPTIONS.map((option) => (
-                        <Button
-                            key={option}
-                            variant={search.status === option ? "default" : "outline"}
-                            size="sm"
-                            className={cn(search.status !== option && "rounded-full bg-card")}
-                            onClick={() => updateSearch({ status: option })}
-                        >
-                            {statusLabel(option)} ({statusCount(option)})
-                        </Button>
-                    ))}
-                </span>
+                <SegmentedControl
+                    label="Filter by status"
+                    items={STATUS_OPTIONS.map((status) => ({
+                        value: status,
+                        label: `${statusLabel(status)} (${statusCount(status)})`,
+                    }))}
+                    selected={search.status}
+                    onSelect={selectStatus}
+                />
                 <label className="flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground">
                     <input
                         type="checkbox"

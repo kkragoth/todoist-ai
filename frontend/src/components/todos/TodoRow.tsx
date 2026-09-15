@@ -1,22 +1,34 @@
 import { motion } from "motion/react";
-import { useState } from "react";
-import { Calendar } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/todos/DateField";
 import { useArchiveTodo, usePatchTodo, useUnarchiveTodo } from "@/hooks/useTodos";
 import type { Todo } from "@/lib/api";
-import { TodoBucket, dueToneOf, hidesDueChip, isOverdueTone, isTodayTone, relativeDueLabel } from "@/lib/todo-buckets";
+import {
+    TodoBucket,
+    completedDueLabel,
+    dueToneOf,
+    hidesDueChip,
+    isOpenOverdueTodo,
+    isOverdueTone,
+    isTodayTone,
+    relativeDueLabel,
+} from "@/lib/todo-buckets";
 import { todayISO } from "@/lib/todos-filters";
 import { isCompactDensity } from "@/lib/todos-view";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
-function dueChipClass(dateISO: string, today: string): string {
+function dueChipClass(dateISO: string, today: string, completed: boolean): string {
+    // Completed tasks never render overdue (red) styling — neutral only.
+    if (completed) {
+        return "border-transparent bg-muted text-muted-foreground";
+    }
     const tone = dueToneOf(dateISO, today);
     if (isOverdueTone(tone)) {
-        return "border-transparent bg-red-500/15 text-red-600 dark:text-red-400";
+        return "border-transparent bg-red-500/15 text-red-600 dark:border-overdue-border dark:bg-overdue-dim dark:text-overdue-text";
     }
     if (isTodayTone(tone)) {
-        return "border-transparent bg-amber-500/20 text-amber-700 dark:text-amber-400";
+        return "border-transparent bg-amber-500/20 text-amber-700 dark:border-transparent dark:bg-gold/15 dark:text-gold";
     }
     return "border-transparent bg-muted text-muted-foreground";
 }
@@ -38,7 +50,6 @@ export function TodoRow({ todo, flash, bucket }: { todo: Todo; flash: boolean; b
     const completingIds = useTodosUiStore((s) => s.completingIds);
     const markCompleting = useTodosUiStore((s) => s.markCompleting);
     const unmarkCompleting = useTodosUiStore((s) => s.unmarkCompleting);
-    const [pickingDate, setPickingDate] = useState(false);
     const density = useTodosUiStore((s) => s.density);
     const compact = isCompactDensity(density);
     const today = todayISO();
@@ -46,6 +57,7 @@ export function TodoRow({ todo, flash, bucket }: { todo: Todo; flash: boolean; b
     const isCompleting = completingIds.includes(todo.id);
     const isDone = todo.completed || isCompleting;
     const chipHidden = bucket !== null && hidesDueChip(bucket);
+    const showOverdueActions = isOpenOverdueTodo(todo, today) && !isCompleting;
 
     function onToggle() {
         if (isCompleting || patchMutation.isPending) return;
@@ -70,6 +82,7 @@ export function TodoRow({ todo, flash, bucket }: { todo: Todo; flash: boolean; b
     return (
         <motion.li
             layout
+            data-todo-id={todo.id}
             initial={{ opacity: 0, y: -6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={isDone ? { opacity: 0, x: 48 } : { opacity: 0, x: 24 }}
@@ -105,84 +118,72 @@ export function TodoRow({ todo, flash, bucket }: { todo: Todo; flash: boolean; b
             </button>
             <div className="min-w-0 flex-1">
                 <motion.p
-                    className="truncate text-[14.5px] text-foreground"
+                    className={cn("truncate text-[14.5px]", isDone ? "text-todo-done" : "text-foreground")}
                     initial={false}
-                    animate={isDone ? { color: "var(--muted-foreground)" } : { color: "var(--foreground)" }}
+                    animate={isDone ? { color: "var(--todo-done)" } : { color: "var(--foreground)" }}
                 >
                     <motion.span
                         initial={false}
                         animate={{ textDecoration: isDone ? "line-through" : "none" }}
                         transition={{ duration: 0.3, delay: isCompleting ? 0.1 : 0 }}
+                        className={cn(isDone && "decoration-todo-done/60")}
                     >
                         {todo.task}
                     </motion.span>
                 </motion.p>
             </div>
-            {!todo.completed && !isCompleting && (
-                <span className={cn("flex items-center gap-1", HOVER_REVEAL)}>
+            {showOverdueActions && (
+                <span
+                    className={cn(
+                        "items-center gap-1",
+                        HOVER_REVEAL,
+                        "hidden group-hover:flex group-focus-within:flex",
+                    )}
+                >
                     <button
                         type="button"
                         onClick={() => onReschedule(0)}
-                        className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:border-amber-500 hover:text-amber-600"
+                        className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:border-amber-500 hover:text-amber-600 dark:hover:border-gold dark:hover:text-gold"
                     >
-                        Today
+                        → Today
                     </button>
                     <button
                         type="button"
                         onClick={() => onReschedule(1)}
-                        className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:border-amber-500 hover:text-amber-600"
+                        className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:border-amber-500 hover:text-amber-600 dark:hover:border-gold dark:hover:text-gold"
                     >
-                        Tomorrow
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => onReschedule(7)}
-                        className="rounded-md border border-border px-1.5 py-0.5 text-[11px] text-muted-foreground hover:border-amber-500 hover:text-amber-600"
-                    >
-                        +1wk
+                        → Tomorrow
                     </button>
                 </span>
             )}
-            {pickingDate ? (
-                <input
-                    type="date"
-                    autoFocus
-                    className="h-7 rounded-md border border-input bg-card px-1.5 text-xs outline-none"
+            {chipHidden ? (
+                <DateField
+                    iconOnly
                     value={todo.todo_date}
-                    onChange={(e) => {
-                        if (e.target.value) {
-                            patchMutation.mutate({ id: todo.id, update: { todo_date: e.target.value } });
-                        }
-                        setPickingDate(false);
-                    }}
-                    onBlur={() => setPickingDate(false)}
-                    title="Pick a date"
+                    onChange={(iso) => patchMutation.mutate({ id: todo.id, update: { todo_date: iso } })}
+                    label=""
+                    title={`${todo.todo_date} — click to reschedule`}
+                    ariaLabel="Reschedule"
+                    className={HOVER_REVEAL}
                 />
-            ) : chipHidden ? (
-                <button
-                    type="button"
-                    title={`${todo.todo_date} — click to reschedule`}
-                    aria-label="Reschedule"
-                    onClick={() => setPickingDate(true)}
-                    className={cn(
-                        "inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground hover:border-amber-500 hover:text-amber-600",
-                        HOVER_REVEAL,
-                    )}
-                >
-                    <Calendar className="size-3.5" />
-                </button>
             ) : (
-                <button
-                    type="button"
+                <DateField
+                    value={todo.todo_date}
+                    onChange={(iso) => patchMutation.mutate({ id: todo.id, update: { todo_date: iso } })}
+                    label={
+                        todo.completed
+                            ? completedDueLabel(todo.todo_date, today)
+                            : relativeDueLabel(todo.todo_date, today)
+                    }
                     title={`${todo.todo_date} — click to reschedule`}
-                    onClick={() => setPickingDate(true)}
+                    ariaLabel="Reschedule"
                     className={cn(
-                        "rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap",
-                        dueChipClass(todo.todo_date, today),
+                        "rounded-full px-2.5 py-0.5 text-xs font-medium",
+                        dueChipClass(todo.todo_date, today, todo.completed),
+                        // Overdue open rows swap the badge for quick actions on hover.
+                        showOverdueActions && "group-hover:hidden group-focus-within:hidden",
                     )}
-                >
-                    {relativeDueLabel(todo.todo_date, today)}
-                </button>
+                />
             )}
             {todo.archived ? (
                 <Button

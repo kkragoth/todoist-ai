@@ -55,6 +55,12 @@ TURN_TIMEOUT_SECONDS = float(os.getenv("CHAT_TURN_TIMEOUT_SECONDS", "180"))
 MAX_ASK_OPTIONS = 4
 MAX_QUESTION_CHARS = 300
 
+# Suggestion/widget caps live in protocol.py (shared with tools/service);
+# re-exported here so config stays the single import site for tunables.
+from .protocol import MAX_SUGGESTION_CHARS as MAX_SUGGESTION_CHARS
+from .protocol import MAX_SUGGESTIONS as MAX_SUGGESTIONS
+from .protocol import UI_DATA_MAX_ROWS as UI_DATA_MAX_ROWS
+
 
 def default_model_for(provider: str) -> str:
     if provider == "llamacpp":

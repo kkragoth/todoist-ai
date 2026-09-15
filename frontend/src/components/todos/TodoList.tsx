@@ -3,10 +3,10 @@ import { useSearch } from "@tanstack/react-router";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronRight } from "lucide-react";
 import { cn } from "cn";
+import { BucketGroupRows } from "@/components/todos/BucketGroupRows";
+import { TodoBucketSections } from "@/components/todos/TodoBucketSections";
+import { TodoRows } from "@/components/todos/TodoRows";
 import { Button } from "@/components/ui/button";
-import { TodoRow } from "@/components/todos/TodoRow";
-import { TodoBucketSection } from "@/components/todos/TodoBucketSection";
-import { TodoDayBucketSection } from "@/components/todos/TodoDayBucketSection";
 import { ApiError } from "@/lib/api";
 import { useTodosQuery } from "@/hooks/useTodos";
 import { groupTodos, groupTodosByDay, sortTodos, type BucketGroup, type BucketWithDays } from "@/lib/todo-buckets";
@@ -70,7 +70,6 @@ export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: bo
     const search = useSearch({ from: "/todos" });
     const todosQuery = useTodosQuery(search, isAuthenticated && authChecked);
     const searchText = useTodosUiStore((s) => s.searchText);
-    const flashIds = useTodosUiStore((s) => s.flashIds);
     const doneExpanded = useTodosUiStore((s) => s.doneExpanded);
     const setDoneExpanded = useTodosUiStore((s) => s.setDoneExpanded);
     const view = useTodosUiStore((s) => s.view);
@@ -132,27 +131,13 @@ export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: bo
                 <section className="mt-5">
                     <motion.ul layout className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
                         <AnimatePresence initial={false}>
-                            {flatOpen.map((todo) => (
-                                <TodoRow key={todo.id} todo={todo} flash={flashIds.includes(todo.id)} bucket={null} />
-                            ))}
+                            <TodoRows todos={flatOpen} bucket={null} />
                         </AnimatePresence>
                     </motion.ul>
                 </section>
             )}
-            {!showList &&
-                !showByDay &&
-                openGroups.map((group) => (
-                    <TodoBucketSection key={group.bucket} bucket={group.bucket} items={group.items} />
-                ))}
-            {!showList &&
-                showByDay &&
-                openGroupsByDay.map((group) =>
-                    group.days.length > 0 ? (
-                        <TodoDayBucketSection key={group.bucket} bucket={group.bucket} days={group.days} />
-                    ) : (
-                        <TodoBucketSection key={group.bucket} bucket={group.bucket} items={group.items} />
-                    ),
-                )}
+            {!showList && !showByDay && <TodoBucketSections groups={openGroups} />}
+            {!showList && showByDay && <BucketGroupRows groups={openGroupsByDay} />}
             {showOpen && openCount === 0 && todosQuery.isSuccess && filtered.length > 0 && (
                 <p className="mt-4 pl-0.5 text-sm text-muted-foreground">
                     Nothing open in this view — add something above, or clear the filters.
@@ -163,14 +148,7 @@ export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: bo
                     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
                         {showDoneFlat ? (
                             <ul>
-                                {doneTodos.map((todo) => (
-                                    <TodoRow
-                                        key={todo.id}
-                                        todo={todo}
-                                        flash={flashIds.includes(todo.id)}
-                                        bucket={null}
-                                    />
-                                ))}
+                                <TodoRows todos={doneTodos} bucket={null} />
                             </ul>
                         ) : (
                             <>
@@ -187,14 +165,7 @@ export function TodoList({ isAuthenticated, authChecked }: { isAuthenticated: bo
                                 {doneExpanded && (
                                     <ul className="border-t border-border/50">
                                         <AnimatePresence initial={false}>
-                                            {doneTodos.map((todo) => (
-                                                <TodoRow
-                                                    key={todo.id}
-                                                    todo={todo}
-                                                    flash={flashIds.includes(todo.id)}
-                                                    bucket={null}
-                                                />
-                                            ))}
+                                            <TodoRows todos={doneTodos} bucket={null} />
                                         </AnimatePresence>
                                     </ul>
                                 )}

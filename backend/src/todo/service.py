@@ -54,10 +54,15 @@ def format_todos(todos: list) -> str:
     First line is always a summary so ambiguous queries ("what are my
     todos") show open/done counts without extra tool calls.
     """
-    open_n = sum(1 for t in todos if not t.completed)
-    done_n = sum(1 for t in todos if t.completed)
-    lines = [f"{open_n} open, {done_n} done:"]
-    for t in todos:
+    return format_todos_from_out(to_todo_list_out(todos))
+
+
+def format_todos_from_out(out: schemas.TodoListOut) -> str:
+    """Same text presenter, rendered from the structured result instead of
+    ORM rows. Single-query pipeline: query once, present twice (text for
+    the model, JSON for widgets) — output is byte-identical to format_todos."""
+    lines = [f"{out.open} open, {out.done} done:"]
+    for t in out.todos:
         mark = "✅" if t.completed else "❌"
         lines.append(f"• {mark} {t.task} (ID: {t.id}, {t.todo_date})")
     return "\n".join(lines)

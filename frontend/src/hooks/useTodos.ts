@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, archiveTodo, createTodo, fetchTodos, patchTodo, unarchiveTodo } from "@/lib/api";
 import { toTodosQuery, todosQueryKey, type TodosSearchParams } from "@/lib/todos-filters";
+import { useAssistantStore } from "@/stores/assistant-store";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
 export function useTodosQuery(search: TodosSearchParams, enabled: boolean) {
@@ -35,7 +36,15 @@ export function usePatchTodo() {
     const invalidate = useInvalidateTodos();
     return useMutation({
         mutationFn: ({ id, update }: { id: number; update: Parameters<typeof patchTodo>[1] }) => patchTodo(id, update),
-        onSuccess: invalidate,
+        onSuccess: (data, variables) => {
+            // Keep sidebar snapshots in sync when the same task is toggled
+            // from the main list (or anywhere else using this hook).
+            const completed = data?.completed ?? variables.update.completed;
+            if (typeof completed === "boolean") {
+                useAssistantStore.getState().setWidgetTodoCompleted(variables.id, completed);
+            }
+            invalidate();
+        },
     });
 }
 

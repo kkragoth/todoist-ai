@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/todos/DateField";
 import { useCreateTodo } from "@/hooks/useTodos";
 import { naturalDateISO, naturalDatePreview } from "@/lib/todo-buckets";
+import { formatDateButtonLabel } from "@/lib/dates";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
 export function TodoCreateForm() {
@@ -43,25 +45,27 @@ export function TodoCreateForm() {
                         value={newTask}
                         onChange={(e) => setNewTask(e.target.value)}
                     />
-                    <input
-                        type="date"
-                        aria-label="Due date"
-                        className="h-8 rounded-md border border-input bg-card px-2 text-xs whitespace-nowrap text-muted-foreground outline-none"
+                    <DateField
                         value={newDate}
-                        onChange={(e) => setNewDate(e.target.value)}
+                        onChange={setNewDate}
+                        label={formatDateButtonLabel(newDate, "Set date")}
+                        title="Due date — dates typed in the text fill this automatically"
+                        ariaLabel="Due date"
                     />
                     <Button type="submit" disabled={createMutation.isPending || !newTask.trim()}>
                         {createMutation.isPending ? "Adding…" : "Add"}
                     </Button>
                 </div>
                 {preview && (
-                    <p className="mt-1 border-t border-dashed border-border/70 pt-1.5 text-xs text-amber-600 dark:text-amber-400">
+                    <p className="mt-1 border-t border-dashed border-border/70 pt-1.5 text-xs text-amber-600 dark:text-gold">
                         {preview}
                     </p>
                 )}
-                <p className="mt-1.5 text-xs text-muted-foreground/70">
-                    Dates typed in the text — “tomorrow”, “fri”, “next week” — fill the date field automatically.
-                    Override it any time.
+                <p
+                    className="mt-1.5 truncate text-xs text-muted-foreground/70"
+                    title="Dates typed in the text fill the date field automatically"
+                >
+                    Tip: type “tomorrow”, “fri” or “next week” — the date fills in.
                 </p>
             </form>
             {formError && <p className="mt-2 text-sm text-destructive">{formError}</p>}

@@ -1,9 +1,12 @@
 import { Link, Outlet, createRootRoute } from "@tanstack/react-router";
-import { AskAssistantButton, AssistantDrawer } from "@/components/assistant-drawer";
+import { AnimatePresence } from "motion/react";
+import { AskAssistantButton } from "@/components/assistant/AskAssistantButton";
+import { AssistantSidebar } from "@/components/assistant-sidebar";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 import { useAuth } from "@/lib/auth";
+import { useTodosUiStore } from "@/stores/todos-ui-store";
 
 export const Route = createRootRoute({
     component: RootLayout,
@@ -11,10 +14,12 @@ export const Route = createRootRoute({
 
 function RootLayout() {
     const { isAuthenticated, isLoading } = useAuth();
+    const assistantOpen = useTodosUiStore((s) => s.assistantOpen);
+    const showSidebar = !isLoading && isAuthenticated && assistantOpen;
 
     return (
-        <div className="min-h-svh bg-background text-foreground">
-            <header className="sticky top-0 z-20 bg-card/80 backdrop-blur">
+        <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
+            <header className="z-20 h-12 shrink-0 border-b border-border/60 bg-background">
                 <div className="flex h-12 w-full items-center justify-between px-3">
                     <div className="flex items-center gap-3">
                         <Link to="/" className="text-[13px] font-semibold tracking-tight">
@@ -40,10 +45,14 @@ function RootLayout() {
                     </div>
                 </div>
             </header>
-            <main className="mx-auto w-full max-w-3xl px-4 py-8">
-                <Outlet />
-            </main>
-            <AssistantDrawer />
+            <div className="flex min-h-0 flex-1 flex-col lg:flex-row lg:pr-3">
+                <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+                    <div className="mx-auto w-full max-w-3xl px-4 py-8">
+                        <Outlet />
+                    </div>
+                </main>
+                <AnimatePresence>{showSidebar && <AssistantSidebar />}</AnimatePresence>
+            </div>
         </div>
     );
 }

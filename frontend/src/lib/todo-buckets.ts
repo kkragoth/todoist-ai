@@ -239,6 +239,31 @@ export function relativeDueLabel(dateISO: string | null | undefined, today: stri
     return dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
 }
 
+/**
+ * Neutral label for completed tasks. Overdue styling (red dot/badge) only
+ * applies to open tasks past their date — a done task never reads as late.
+ * E.g. "Completed yesterday", "Completed today".
+ */
+export function completedDueLabel(dateISO: string | null | undefined, today: string = todayISO()): string {
+    if (!dateISO) return "Completed";
+    const diff = diffDays(dateISO, today);
+    if (diff === 0) return "Completed today";
+    if (diff === -1) return "Completed yesterday";
+    return `Completed ${relativeDueLabel(dateISO, today)}`;
+}
+
+/** True when the todo is open (not completed) and past its date. */
+export function isOpenOverdueTodo(todo: Pick<Todo, "completed" | "todo_date">, today: string = todayISO()): boolean {
+    if (todo.completed) return false;
+    if (!todo.todo_date) return false;
+    return isOverdueBucket(bucketOf(todo.todo_date, today));
+}
+
+/** True when every todo in the group is completed (header dot goes neutral). */
+export function isAllDone(todos: Pick<Todo, "completed">[]): boolean {
+    return todos.length > 0 && todos.every((todo) => todo.completed);
+}
+
 export interface NaturalDateHit {
     offset: number;
     label: string;

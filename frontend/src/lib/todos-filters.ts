@@ -51,6 +51,19 @@ export function parseTodoStatus(value: unknown): TodoStatus {
     }
 }
 
+export function parseTodoStatusStrict(value: unknown): TodoStatus | null {
+    switch (value) {
+        case TodoStatus.Open:
+            return TodoStatus.Open;
+        case TodoStatus.Done:
+            return TodoStatus.Done;
+        case TodoStatus.All:
+            return TodoStatus.All;
+        default:
+            return null;
+    }
+}
+
 export function parseDatePreset(value: unknown): DatePreset {
     switch (value) {
         case DatePreset.Overdue:
@@ -69,6 +82,27 @@ export function parseDatePreset(value: unknown): DatePreset {
             return DatePreset.All;
         default:
             return DatePreset.All;
+    }
+}
+
+export function parseDatePresetStrict(value: unknown): DatePreset | null {
+    switch (value) {
+        case DatePreset.Overdue:
+            return DatePreset.Overdue;
+        case DatePreset.Today:
+            return DatePreset.Today;
+        case DatePreset.Tomorrow:
+            return DatePreset.Tomorrow;
+        case DatePreset.Week:
+            return DatePreset.Week;
+        case DatePreset.Later:
+            return DatePreset.Later;
+        case DatePreset.Custom:
+            return DatePreset.Custom;
+        case DatePreset.All:
+            return DatePreset.All;
+        default:
+            return null;
     }
 }
 
