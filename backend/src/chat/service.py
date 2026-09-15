@@ -66,7 +66,7 @@ from .protocol import (
     has_ui_action,
     normalize_capabilities,
 )
-from .tools import build_tools_for_user
+from .tools import ChatContext, build_tools_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -302,8 +302,11 @@ async def run_turn(
         capabilities = set()
         ui_state = None
 
-    tools = build_tools_for_user(user_id, capabilities)
-    agent = create_agent(model=llm, tools=tools)
+    tools = build_tools_for_user(capabilities)
+    agent = create_agent(model=llm, tools=tools, context_schema=ChatContext)
+    turn_context = ChatContext(
+        user_id=user_id, ui_enabled=has_ui_action(capabilities)
+    )
 
     stored = await history.get_history(user_id, thread_id)
     user_message = HumanMessage(content=user_text)
@@ -327,6 +330,7 @@ async def run_turn(
             async for mode, data in agent.astream(
                 {"messages": messages},
                 config={"recursion_limit": config.RECURSION_LIMIT},
+                context=turn_context,
                 stream_mode=["messages", "updates"],
             ):
                 if is_disconnected is not None and await is_disconnected():
