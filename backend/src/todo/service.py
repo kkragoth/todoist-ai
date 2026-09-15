@@ -24,11 +24,6 @@ from difflib import SequenceMatcher
 from core.database import SessionLocal
 from todo import events, models, schemas
 
-# Easy toggle for ambiguous "what are my todos" queries: None = show both
-# open and done with a summary line, False = open only, True = done only.
-# The chat/MCP `completed` arg overrides this only when explicitly passed.
-LIST_DEFAULT_COMPLETED: bool | None = None
-
 # Minimum SequenceMatcher ratio to keep a non-substring fuzzy hit.
 FUZZY_THRESHOLD = 0.4
 
@@ -117,8 +112,7 @@ def query_todos(
     start = parse_filter_date(date_from, "date_from")
     end = parse_filter_date(date_to, "date_to")
     today = date.today()
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         db_query = db.query(models.Todo).filter(models.Todo.user_id == user_id)
         if completed is not None:
             db_query = db_query.filter(models.Todo.completed == completed)
@@ -135,8 +129,6 @@ def query_todos(
             if completed is None:
                 db_query = db_query.filter(models.Todo.completed == False)  # noqa: E712
         todos = db_query.order_by(models.Todo.id).all()
-    finally:
-        db.close()
     if query and query.strip():
         scored = [(fuzzy_score(query, t.task), t) for t in todos]
         scored.sort(key=lambda pair: pair[0], reverse=True)
@@ -186,8 +178,7 @@ def add_todo(
             return f"Error: bad todo_date '{todo_date}' — use YYYY-MM-DD."
     else:
         target = date.today()
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         todo = models.Todo(task=task, todo_date=target, user_id=user_id)
         db.add(todo)
         db.commit()
@@ -196,8 +187,6 @@ def add_todo(
             user_id, {"type": "todos-changed", "action": "created", "id": todo.id}
         )
         return f"Successfully added todo #{todo.id}: '{todo.task}' for {todo.todo_date}"
-    finally:
-        db.close()
 
 
 def update_todo(
@@ -213,8 +202,7 @@ def update_todo(
             new_date = date.fromisoformat(todo_date)
         except ValueError:
             return f"Error: bad todo_date '{todo_date}' — use YYYY-MM-DD."
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         todo = (
             db.query(models.Todo)
             .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
@@ -235,14 +223,11 @@ def update_todo(
             user_id, {"type": "todos-changed", "action": "updated", "id": todo.id}
         )
         return f"Updated Task #{todo.id}: • {mark} {todo.task} (ID: {todo.id}, {todo.todo_date})"
-    finally:
-        db.close()
 
 
 def get_todo(user_id: int, todo_id: int):
     """Fetch one user-scoped todo row (detached from the session)."""
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         todo = (
             db.query(models.Todo)
             .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
@@ -251,13 +236,10 @@ def get_todo(user_id: int, todo_id: int):
         if todo is not None:
             db.expunge(todo)
         return todo
-    finally:
-        db.close()
 
 
 def archive_todo(user_id: int, todo_id: int) -> str:
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         todo = (
             db.query(models.Todo)
             .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
@@ -272,14 +254,11 @@ def archive_todo(user_id: int, todo_id: int) -> str:
             user_id, {"type": "todos-changed", "action": "archived", "id": todo.id}
         )
         return f"Archived Task #{todo.id} '{todo.task}'. It will no longer show up in listings."
-    finally:
-        db.close()
 
 
 def delete_todo(user_id: int, todo_id: int) -> str:
     """Hard-delete one user-scoped todo. Unlike archive_todo the row is gone."""
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         todo = (
             db.query(models.Todo)
             .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
@@ -294,5 +273,3 @@ def delete_todo(user_id: int, todo_id: int) -> str:
             user_id, {"type": "todos-changed", "action": "deleted", "id": todo_id}
         )
         return f"Deleted Task #{todo_id} '{label}'. It is permanently gone."
-    finally:
-        db.close()

@@ -109,11 +109,8 @@ async def resolve_post_thread(user_id: int, thread_id) -> int:
 
 
 def resolve_post_thread_db(user_id: int, thread_id) -> int:
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         return resolve_thread_id(db, user_id, thread_id)
-    finally:
-        db.close()
 
 
 async def get_thread_summary(user_id: int, thread_id: int) -> dict | None:
@@ -121,12 +118,9 @@ async def get_thread_summary(user_id: int, thread_id: int) -> dict | None:
 
 
 def get_thread_summary_db(user_id: int, thread_id: int) -> dict | None:
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         thread = scoped_thread(db, user_id, thread_id)
         return thread_summary(db, thread) if thread else None
-    finally:
-        db.close()
 
 
 async def list_threads(user_id: int) -> list[dict]:
@@ -134,8 +128,7 @@ async def list_threads(user_id: int) -> list[dict]:
 
 
 def list_threads_db(user_id: int) -> list[dict]:
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         threads = (
             db.query(ChatThread)
             .filter(ChatThread.user_id == user_id)
@@ -143,8 +136,6 @@ def list_threads_db(user_id: int) -> list[dict]:
             .all()
         )
         return [thread_summary(db, t) for t in threads]
-    finally:
-        db.close()
 
 
 async def get_history(user_id: int, thread_id) -> list:
@@ -159,8 +150,7 @@ async def get_history_payloads(user_id: int, thread_id) -> list[dict]:
 
 
 def get_history_payloads_db(user_id: int, thread_id) -> list[dict]:
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         thread = scoped_thread(db, user_id, thread_id)
         if not thread:
             return []
@@ -172,8 +162,6 @@ def get_history_payloads_db(user_id: int, thread_id) -> list[dict]:
             .all()
         )
         return [r.payload for r in reversed(rows)]
-    finally:
-        db.close()
 
 
 async def append_turn(
@@ -196,14 +184,22 @@ def append_turn_db(
     provider: str | None,
     model: str | None,
 ) -> int:
-    db = SessionLocal()
-    try:
-        tid = resolve_thread_id(db, user_id, thread_id)
-        thread = scoped_thread(db, user_id, tid)
+    with SessionLocal() as db:
+        # The POST router already resolved (or created) the thread, so an
+        # owned integer id is used directly. Anything else keeps the
+        # get-or-create fallback for unknown/omitted ids.
+        thread = None
+        if isinstance(thread_id, int):
+            thread = scoped_thread(db, user_id, thread_id)
+        if thread is None:
+            tid = resolve_thread_id(db, user_id, thread_id)
+            thread = scoped_thread(db, user_id, tid)
         for message in new_messages:
             db.add(
                 ChatMessage(
-                    thread_id=tid, role=message.type, payload=message_to_payload(message)
+                    thread_id=thread.id,
+                    role=message.type,
+                    payload=message_to_payload(message),
                 )
             )
         if thread.title == DEFAULT_TITLE:
@@ -217,9 +213,7 @@ def append_turn_db(
         if model:
             thread.model = model
         db.commit()
-        return tid
-    finally:
-        db.close()
+        return thread.id
 
 
 async def clear_history(user_id: int, thread_id: int) -> bool:
@@ -228,13 +222,10 @@ async def clear_history(user_id: int, thread_id: int) -> bool:
 
 
 def clear_history_db(user_id: int, thread_id: int) -> bool:
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         thread = scoped_thread(db, user_id, thread_id)
         if not thread:
             return False
         db.query(ChatMessage).filter(ChatMessage.thread_id == thread.id).delete()
         db.commit()
         return True
-    finally:
-        db.close()

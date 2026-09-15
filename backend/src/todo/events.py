@@ -12,16 +12,13 @@ unreachable, so unit tests and `--no-redis` local runs keep working.
 import asyncio
 import json
 import logging
-import os
 from collections import defaultdict
 
-from dotenv import load_dotenv
-
-load_dotenv()
+from core.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
-REDIS_URL = os.getenv("REDIS_URL", "")
+REDIS_URL = get_settings().redis_url
 
 _subscribers: dict[int, set[asyncio.Queue]] = defaultdict(set)
 

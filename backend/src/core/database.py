@@ -5,15 +5,14 @@ present). Accepts both `postgres://` and `postgresql://` schemes and
 normalizes to SQLAlchemy's `postgresql+psycopg://` dialect.
 """
 
-import os
-
-from dotenv import load_dotenv
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-load_dotenv()
+from core.settings import get_settings
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./todos.db")
+_settings = get_settings()
+
+DATABASE_URL = _settings.database_url
 
 
 def _normalize_url(url: str) -> str:
@@ -35,11 +34,11 @@ else:
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
         pool_pre_ping=True,
-        pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
-        max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
-        pool_timeout=int(os.getenv("DB_POOL_TIMEOUT_SECONDS", "30")),
+        pool_size=_settings.db_pool_size,
+        max_overflow=_settings.db_max_overflow,
+        pool_timeout=_settings.db_pool_timeout_seconds,
         connect_args={
-            "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5")),
+            "connect_timeout": _settings.db_connect_timeout_seconds,
         },
     )
 
