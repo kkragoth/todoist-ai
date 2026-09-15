@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from todo import service as todo_service
 
+from .events import clean_suggestions
 from .protocol import (
     HIGHLIGHT_MAX_IDS,
     MAX_SUGGESTION_CHARS,
@@ -286,9 +287,7 @@ def build_tools_for_user(
         """UI-only passthrough: the service emits a `ui_suggestions` event
         and the client renders them as tappable chips. The strings only
         land in history so the next turn remembers what was offered."""
-        clean = [s.strip()[:MAX_SUGGESTION_CHARS] for s in (suggestions or []) if s.strip()][
-            :MAX_SUGGESTIONS
-        ]
+        clean = clean_suggestions(suggestions)
         return f"Suggested follow-ups (client renders them): {clean or 'none'}"
 
     list_description = (
