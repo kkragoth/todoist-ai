@@ -1,8 +1,12 @@
 """Auth helper for MCP tools.
 
-Auth comes from the HTTP Authorization header (Bearer JWT) — the model
-never sees or supplies credentials. Every tool resolves the current
-user once per request with resolve_user_from_headers and only touches
+Primary identity is the OAuth access token FastMCP verified for this
+request (see ``mcp_server/oauth.py``) — the model never sees or supplies
+credentials. Legacy ``Authorization: Bearer`` JWTs from ``POST
+/auth/token`` keep working as a fallback (same signing key), so the CLI
+``--mcp-direct`` mode and old static-header configs are unaffected.
+
+Every tool resolves the current user once per request and only touches
 that user's rows.
 
 Note on "once per request": the MCP server runs stateless
@@ -34,6 +38,16 @@ def _bearer_token(headers: dict[str, str] | None) -> str | None:
     return auth_header[7:].strip() or None
 
 
+def _load_user_by_subject(subject: object) -> User | None:
+    """Load a user by token subject (new id tokens or legacy username)."""
+    with SessionLocal() as db:
+        user = security.resolve_user_from_token_payload(db, subject)
+        # Detach before the session closes so callers can use scalar attrs.
+        if user is not None:
+            db.expunge(user)
+        return user
+
+
 def resolve_user_from_headers(headers: dict[str, str] | None) -> User:
     """Resolve the JWT user from request headers. Raises ValueError if bad."""
     token = _bearer_token(headers)
@@ -44,11 +58,26 @@ def resolve_user_from_headers(headers: dict[str, str] | None) -> User:
         subject: object = payload.get("sub")
     except Exception:
         raise ValueError("Invalid or expired token — log in again.")
-    with SessionLocal() as db:
-        user = security.resolve_user_from_token_payload(db, subject)
-        # Detach before the session closes so callers can use scalar attrs.
-        if user is not None:
-            db.expunge(user)
+    user = _load_user_by_subject(subject)
     if not user:
         raise ValueError("Invalid token — log in again.")
     return user
+
+
+def resolve_user(headers: dict | None = None) -> User:
+    """Resolve the current user: OAuth token first, header JWT fallback."""
+    try:
+        from fastmcp.server.dependencies import get_access_token
+    except Exception:
+        return resolve_user_from_headers(headers or {})
+    try:
+        token = get_access_token()
+    except Exception:
+        token = None
+    if token is not None:
+        subject = token.subject or (token.claims or {}).get("sub")
+        if subject:
+            user = _load_user_by_subject(subject)
+            if user:
+                return user
+    return resolve_user_from_headers(headers or {})

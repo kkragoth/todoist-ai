@@ -26,7 +26,10 @@ class ChatThread(Base):
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
-    __table_args__ = (Index("ix_chat_messages_thread_id", "thread_id", "id"),)
+    # Named differently from the auto `ix_chat_messages_thread_id` on
+    # thread_id (index=True): duplicate index names crash create_all on
+    # fresh databases.
+    __table_args__ = (Index("ix_chat_messages_thread_ordered", "thread_id", "id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     thread_id = Column(Integer, ForeignKey("chat_threads.id"), index=True)

@@ -8,14 +8,14 @@ from fastmcp.dependencies import CurrentHeaders
 
 from auth.models import User
 from mcp_server.server import mcp
-from mcp_server.utils import resolve_user_from_headers
+from mcp_server.utils import resolve_user
 from todo import service as todo_service
 
 
 def _user_or_text_error(headers: dict | None) -> tuple[User | None, str | None]:
     """Resolve the user, or return an agent-visible error string."""
     try:
-        return resolve_user_from_headers(headers), None
+        return resolve_user(headers), None
     except ValueError as exc:
         return None, f"Error: {exc}"
 
@@ -23,7 +23,7 @@ def _user_or_text_error(headers: dict | None) -> tuple[User | None, str | None]:
 def _user_or_json_error(headers: dict | None) -> tuple[User | None, dict | None]:
     """Resolve the user, or return an agent-visible error payload."""
     try:
-        return resolve_user_from_headers(headers), None
+        return resolve_user(headers), None
     except ValueError as exc:
         return None, {"error": str(exc), "open": 0, "done": 0, "todos": []}
 

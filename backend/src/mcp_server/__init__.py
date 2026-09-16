@@ -11,7 +11,7 @@ domain service, not LLM-over-MCP). This MCP server is a parallel
 interface to that service for external MCP clients.
 """
 
-from mcp_server.server import mcp
+from mcp_server.server import mcp, oauth_provider
 from mcp_server import prompts, resources, tools  # noqa: F401 - registration side effects
 
-__all__ = ["mcp"]
+__all__ = ["mcp", "oauth_provider"]

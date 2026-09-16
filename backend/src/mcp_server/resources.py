@@ -16,7 +16,7 @@ credentials, every read resolves the user from request headers.
 from fastmcp.dependencies import CurrentHeaders
 
 from mcp_server.server import mcp
-from mcp_server.utils import resolve_user_from_headers
+from mcp_server.utils import resolve_user
 from todo import service as todo_service
 
 
@@ -29,7 +29,7 @@ from todo import service as todo_service
 def read_todos(headers: dict = CurrentHeaders()) -> dict:
     """Read the full todo list for the authenticated user."""
     try:
-        user = resolve_user_from_headers(headers)
+        user = resolve_user(headers)
     except ValueError as e:
         return {"error": str(e), "open": 0, "done": 0, "todos": []}
     todos = todo_service.query_todos(user.id)
@@ -45,7 +45,7 @@ def read_todos(headers: dict = CurrentHeaders()) -> dict:
 def read_todo(todo_id: int, headers: dict = CurrentHeaders()) -> dict:
     """Read a single todo by id for the authenticated user."""
     try:
-        user = resolve_user_from_headers(headers)
+        user = resolve_user(headers)
     except ValueError as e:
         return {"error": str(e)}
     todo = todo_service.get_todo(user.id, todo_id)

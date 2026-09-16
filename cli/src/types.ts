@@ -4,6 +4,8 @@ export interface CliOptions {
     provider?: string;
     model?: string;
     mcpDirect: boolean;
+    /** Show username/password tabs next to browser OAuth (default: OAuth only). */
+    allowPasswordLogin: boolean;
 }
 
 export type ChatEvent =
@@ -83,6 +85,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 ];
 
 export enum AuthMode {
+    OAuth = "oauth",
     Login = "login",
     Register = "register",
 }

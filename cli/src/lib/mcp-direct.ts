@@ -2,10 +2,12 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { useChatStore } from "@/stores/chat-store.js";
 import { useSessionStore } from "@/stores/session-store.js";
+import { resolveSessionToken } from "@/lib/oauth-provider.js";
 
 /** MCP direct client: talks Streamable HTTP straight to the backend,
- * bypassing the LLM chat loop. JWT comes from the CLI token file
- * (same login as chat) and rides as an Authorization header.
+ * bypassing the LLM chat loop. The Bearer token is the OAuth access token
+ * (auto-refreshed) or the password-login JWT — same login as chat — and
+ * rides as an Authorization header.
  * Plain functions over explicit (apiUrl, token) args — stores only
  * enter in submitDirectText, mirroring lib/chat-turn.ts. */
 
@@ -31,11 +33,15 @@ function mcpUrl(apiUrl: string): URL {
 /** Connect (or reuse) an authenticated MCP client for this apiUrl+token. */
 export async function getMcpClient(apiUrl: string, token: string): Promise<Client> {
     if (!token) throw new Error("Not logged in — /logout then log in again.");
-    const key = cacheKey(apiUrl, token);
+    // OAuth access tokens expire: refresh transparently when possible.
+    const fresh = await resolveSessionToken(apiUrl, token);
+    if (!fresh) throw new Error("Not logged in — /logout then log in again.");
+    if (fresh !== token) useSessionStore.getState().setToken(fresh);
+    const key = cacheKey(apiUrl, fresh);
     const hit = cache.get(key);
     if (hit) return hit.client;
     const transport = new StreamableHTTPClientTransport(mcpUrl(apiUrl), {
-        requestInit: { headers: { Authorization: `Bearer ${token}` } },
+        requestInit: { headers: { Authorization: `Bearer ${fresh}` } },
     });
     const client = new Client({ name: CLIENT_NAME, version: CLIENT_VERSION });
     try {

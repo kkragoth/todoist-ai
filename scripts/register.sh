@@ -9,7 +9,7 @@
 #   TODO_USER / TODO_PASS, or positional args $1 / $2.
 #
 # Needs: curl, python3. Backend must be running.
-# Next step: source scripts/set_token.sh to log in.
+# Next step: run `opencode mcp auth todoist-ai` and log in as this user.
 
 set -euo pipefail
 

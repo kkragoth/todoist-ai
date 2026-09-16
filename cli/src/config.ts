@@ -18,21 +18,28 @@ export function parseArgs(argv: string[]): CliOptions & { help: boolean } {
     const provider = pickFlag(argv, "--provider") ?? process.env["TODO_PROVIDER"] ?? undefined;
     const model = pickFlag(argv, "--model") ?? process.env["TODO_MODEL"] ?? undefined;
     const mcpDirect = hasFlag(argv, "--mcp-direct") || process.env["TODO_MCP_DIRECT"] === "1";
+    const allowPasswordLogin =
+        hasFlag(argv, "--allow-password-login") || process.env["TODO_ALLOW_PASSWORD_LOGIN"] === "1";
     return {
         apiUrl: apiUrl.replace(/\/$/, ""),
         threadId,
         provider: provider || undefined,
         model: model || undefined,
         mcpDirect,
+        allowPasswordLogin,
         help: hasFlag(argv, "--help", "-h"),
     };
 }
 
 export const HELP_TEXT = `todoist-ai chat CLI (OpenTUI)
 
-Usage: todoist-ai [--api-url URL] [--thread ID] [--provider P] [--model M] [--mcp-direct]
+Usage: todoist-ai [--api-url URL] [--thread ID] [--provider P] [--model M] [--mcp-direct] [--allow-password-login]
 
-Env: TODO_API_URL, TODO_THREAD, TODO_PROVIDER, TODO_MODEL, TODO_MCP_DIRECT=1
+Env: TODO_API_URL, TODO_THREAD, TODO_PROVIDER, TODO_MODEL, TODO_MCP_DIRECT=1, TODO_ALLOW_PASSWORD_LOGIN=1
+
+Sign-in is browser OAuth by default; --allow-password-login (or
+TODO_ALLOW_PASSWORD_LOGIN=1) additionally shows username/password tabs
+for headless use.
 
 Slash commands (in-app):
   /help              show commands
