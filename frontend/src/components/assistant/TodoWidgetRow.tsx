@@ -1,9 +1,10 @@
 import { cn } from "cn";
 import { usePatchTodo } from "@/hooks/useTodos";
 import type { WidgetTodo } from "@/lib/chat";
+import { highlightTodoIds } from "@/lib/highlight-todos";
 import { useAssistantStore } from "@/stores/assistant-store";
 
-export function TodoWidgetRow({ todo, onHighlight }: { todo: WidgetTodo; onHighlight: (id: number) => void }) {
+export function TodoWidgetRow({ todo }: { todo: WidgetTodo }) {
     const patchMutation = usePatchTodo();
     const setWidgetTodoCompleted = useAssistantStore((s) => s.setWidgetTodoCompleted);
 
@@ -47,7 +48,7 @@ export function TodoWidgetRow({ todo, onHighlight }: { todo: WidgetTodo; onHighl
             </button>
             <button
                 type="button"
-                onClick={() => onHighlight(todo.id)}
+                onClick={() => highlightTodoIds([todo.id])}
                 title={`Highlight #${todo.id} in the list`}
                 className="min-w-0 flex-1 truncate text-left text-[13px]"
             >

@@ -39,8 +39,9 @@ omit the capability and never see these tools or events.
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import datetime
+from typing import Any
 
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, ToolMessage
@@ -63,6 +64,7 @@ from .protocol import (
     ChatEventType,
     ClientCapability,
     ToolName,
+    UiActionName,
     has_ui_action,
 )
 from .schemas import ClientInfo
@@ -70,62 +72,81 @@ from .tools import ChatContext, build_tools_for_user
 
 logger = logging.getLogger(__name__)
 
-# UI-only tools (no DB work) -> client-local `ui_action` events.
-# Mapping: tool name -> ui_action `action` name sent over SSE.
-UI_ACTION_TOOLS = {tool.value: action.value for tool, action in TOOL_TO_UI_ACTION.items()}
+# Dedup key: stable call id when present, otherwise name+args fallback.
+DedupKey = str | tuple[str | None, str]
+
+
+def parse_tool_name(name: object) -> ToolName | None:
+    """Coerce a raw tool name to its enum, or None when unknown."""
+    if isinstance(name, ToolName):
+        return name
+    if isinstance(name, str):
+        try:
+            return ToolName(name)
+        except ValueError:
+            return None
+    return None
+
+
+def ui_action_for(tool: ToolName) -> UiActionName | None:
+    return TOOL_TO_UI_ACTION.get(tool)
 
 
 class TurnState:
     """Per-turn routing state for one `run_turn` loop.
 
-    Replaces the six closures that used to share six `nonlocal` vars.
-    Routing rules (unchanged): ask_user terminal, ui_action/suggest
-    non-terminal, tool-call dedup by call id.
+    Routing rules: ask_user terminal, ui_action/suggest non-terminal,
+    tool-call dedup by call id.
     """
 
     def __init__(self, *, user_id: int, capabilities: set[ClientCapability]) -> None:
         self.user_id = user_id
         self.capabilities = capabilities
-        self.seen_tool_ids: set = set()
-        self.tool_names: dict[str, str] = {}  # tool_call id -> name (for tool_result)
-        self.ask_event: dict | None = None
-        self.ask_call_ids: set = set()
-        self.ui_call_ids: set = set()
+        self.seen_tool_ids: set[DedupKey] = set()
+        self.tool_names: dict[str, str] = {}  # tool_call id -> tool name
+        self.ask_event: dict[str, Any] | None = None
+        self.ask_call_ids: set[str] = set()
+        self.ui_call_ids: set[str] = set()
         self.ask_done = False
         self.prefix_stripper = AnswerPrefixStripper()
 
     @staticmethod
-    def call_parts(tc) -> tuple:
-        name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
-        args = tc.get("args") if isinstance(tc, dict) else getattr(tc, "args", None)
-        call_id = tc.get("id") if isinstance(tc, dict) else getattr(tc, "id", None)
-        return name, args, call_id
+    def call_parts(tool_call: dict[str, Any] | Any) -> tuple[Any, Any, str | None]:
+        if isinstance(tool_call, dict):
+            return tool_call.get("name"), tool_call.get("args"), tool_call.get("id")
+        return (
+            getattr(tool_call, "name", None),
+            getattr(tool_call, "args", None),
+            getattr(tool_call, "id", None),
+        )
 
-    def announce_tool_call(self, tc) -> dict | None:
-        name, args, call_id = self.call_parts(tc)
-        key = call_id or (name, str(args or ""))
+    def _dedup_key(self, name: Any, args: Any, call_id: str | None) -> DedupKey:
+        if call_id:
+            return call_id
+        return (str(name) if name is not None else None, str(args or ""))
+
+    def _remember(self, name: Any, call_id: str | None, extra_ids: set[str] | None = None) -> None:
+        if call_id and name is not None:
+            self.tool_names[call_id] = str(name)
+            if extra_ids is not None:
+                extra_ids.add(call_id)
+
+    def announce_tool_call(self, tool_call: dict[str, Any] | Any) -> dict[str, Any] | None:
+        name, args, call_id = self.call_parts(tool_call)
+        key = self._dedup_key(name, args, call_id)
         if key in self.seen_tool_ids:
             return None
         self.seen_tool_ids.add(key)
-        if call_id and name:
-            self.tool_names[call_id] = name
+        self._remember(name, call_id)
         return {"type": ChatEventType.TOOL_CALL.value, "tool": name, "args": args or {}}
 
-    def check_ask(self, tc) -> dict | None:
-        """Route one ask_user call to its event. The first call wins; later
-        ones are ignored. A malformed call still yields a fallback question
-        so the turn never ends silently.
-
-        Every ask_user call id is recorded so its ToolMessage can be
-        suppressed (the client already got the ask_user event) while still
-        landing in history for next-turn context.
-        """
-        name, args, call_id = self.call_parts(tc)
-        if name != ToolName.ASK_USER:
+    def check_ask(self, tool_call: dict[str, Any] | Any) -> dict[str, Any] | None:
+        """Route one ask_user call. First call wins; malformed still yields
+        a fallback question so the turn never ends silently."""
+        name, args, call_id = self.call_parts(tool_call)
+        if parse_tool_name(name) is not ToolName.ASK_USER:
             return None
-        if call_id:
-            self.tool_names[call_id] = ToolName.ASK_USER.value
-            self.ask_call_ids.add(call_id)
+        self._remember(ToolName.ASK_USER.value, call_id, self.ask_call_ids)
         if self.ask_event is not None:
             return None
         event = normalize_ask(args)
@@ -148,105 +169,86 @@ class TurnState:
         )
         return event
 
-    def check_ui_action(self, tc) -> dict | None:
-        """Route one UI-only call to its event. Non-terminal: the loop keeps
-        going so the model narrates after driving the view. The call id is
-        recorded so its ack ToolMessage stays in history but never surfaces
-        as tool_result noise."""
-        name, args, call_id = self.call_parts(tc)
-        if name not in UI_ACTION_TOOLS:
+    def check_ui_action(self, tool_call: dict[str, Any] | Any) -> dict[str, Any] | None:
+        """Route one UI-only call. Non-terminal: loop continues so the model
+        narrates after driving the view."""
+        name, args, call_id = self.call_parts(tool_call)
+        tool = parse_tool_name(name)
+        ui_action = ui_action_for(tool) if tool is not None else None
+        if tool is None or ui_action is None:
             return None
-        key = call_id or (name, str(args or ""))
+        key = self._dedup_key(name, args, call_id)
         if key in self.seen_tool_ids:
             return None
         self.seen_tool_ids.add(key)
-        if call_id and name:
-            self.tool_names[call_id] = name
-            self.ui_call_ids.add(call_id)
+        self._remember(name, call_id, self.ui_call_ids)
         return {
             "type": ChatEventType.UI_ACTION.value,
-            "action": UI_ACTION_TOOLS[name],
+            "action": ui_action.value,
             "args": args or {},
         }
 
-    def check_suggest(self, tc) -> dict | None:
-        """Route one suggest_followups call to its event. Non-terminal and
-        idempotent per call: cleaned chips (max 4, max 40 chars each) render
-        as tappable follow-ups. Empty suggestions emit nothing. The call id
-        is recorded so its ack ToolMessage stays in history but never
-        surfaces as tool_result noise."""
-        name, args, call_id = self.call_parts(tc)
-        if name != ToolName.SUGGEST_FOLLOWUPS:
+    def check_suggest(self, tool_call: dict[str, Any] | Any) -> dict[str, Any] | None:
+        """Route one suggest_followups call. Empty suggestions emit nothing."""
+        name, args, call_id = self.call_parts(tool_call)
+        if parse_tool_name(name) is not ToolName.SUGGEST_FOLLOWUPS:
             return None
-        key = call_id or (name, str(args or ""))
+        key = self._dedup_key(name, args, call_id)
         if key in self.seen_tool_ids:
             return None
         self.seen_tool_ids.add(key)
-        if call_id and name:
-            self.tool_names[call_id] = name
-            self.ui_call_ids.add(call_id)
-        raw = (args or {}).get("suggestions") if isinstance(args, dict) else []
+        self._remember(name, call_id, self.ui_call_ids)
+        raw = args.get("suggestions") if isinstance(args, dict) else []
         suggestions = clean_suggestions(raw)
         if not suggestions:
             return None
         return {"type": ChatEventType.UI_SUGGESTIONS.value, "suggestions": suggestions}
 
-    def route_tool_call(self, tc) -> dict | None:
-        """Route one tool call to its SSE event. Ask calls yield ask_user,
-        suggest calls yield ui_suggestions, UI calls yield ui_action,
-        everything else a generic tool_call. None means duplicate."""
-        tool_name = self.call_parts(tc)[0]
-        if tool_name == ToolName.ASK_USER:
-            return self.check_ask(tc)
-        if tool_name == ToolName.SUGGEST_FOLLOWUPS:
-            return self.check_suggest(tc)
-        if tool_name in UI_ACTION_TOOLS:
-            return self.check_ui_action(tc)
-        return self.announce_tool_call(tc)
+    def route_tool_call(self, tool_call: dict[str, Any] | Any) -> dict[str, Any] | None:
+        """Route one tool call to its SSE event. None means duplicate."""
+        tool = parse_tool_name(self.call_parts(tool_call)[0])
+        if tool is ToolName.ASK_USER:
+            return self.check_ask(tool_call)
+        if tool is ToolName.SUGGEST_FOLLOWUPS:
+            return self.check_suggest(tool_call)
+        if tool is not None and ui_action_for(tool) is not None:
+            return self.check_ui_action(tool_call)
+        return self.announce_tool_call(tool_call)
 
-    def translate_message_chunk(self, chunk) -> list[dict]:
+    def translate_message_chunk(self, chunk: Any) -> list[dict[str, Any]]:
         """Translate one "messages"-mode chunk into SSE events.
 
-        Tool-node messages are skipped here: tool output has its own
-        tool_result event from `translate_tool_message` below. Without
-        this guard the tool output is emitted as answer tokens and then
-        restated by the model, i.e. every answer appears twice.
+        Tool-node messages are skipped: tool output has its own
+        tool_result event. Without this guard every answer appears twice.
         """
-        # The "messages" stream yields chunks from every node, including
-        # the tools node (ToolMessage carrying the full tool output as
-        # content). Only the model node speaks for the answer.
         if isinstance(chunk, ToolMessage):
             return []
-        events = []
+        events: list[dict[str, Any]] = []
         delta = text_delta(getattr(chunk, "content", ""))
         if delta:
             delta = self.prefix_stripper.feed(delta)
         if delta:
             events.append({"type": ChatEventType.TOKEN.value, "content": delta})
-        for tc in getattr(chunk, "tool_calls", None) or []:
-            event = self.route_tool_call(tc)
+        for tool_call in getattr(chunk, "tool_calls", None) or []:
+            event = self.route_tool_call(tool_call)
             if event is not None:
                 events.append(event)
         return events
 
-    def translate_tool_message(self, message: ToolMessage) -> list[dict]:
+    def translate_tool_message(self, message: ToolMessage) -> list[dict[str, Any]]:
         """Translate one tools-node ToolMessage into SSE events.
 
-        Ask/UI acks stay in history but never surface as tool_result
-        noise (the client already got the ask_user/ui_action event).
-        Sets `ask_done` so the loop breaks after the ask ToolMessage
-        lands in history.
+        Ask/UI acks stay in history but never surface as tool_result noise.
+        Sets `ask_done` so the loop breaks after the ask ToolMessage lands.
         """
         tool_call_id = getattr(message, "tool_call_id", "")
         tool = self.tool_names.get(tool_call_id, getattr(message, "name", ""))
-        if tool == ToolName.ASK_USER.value or tool_call_id in self.ask_call_ids:
-            # Client already got the ask_user event;
-            # keep the message in history, skip the noise.
+        if parse_tool_name(tool) is ToolName.ASK_USER or tool_call_id in self.ask_call_ids:
             self.ask_done = True
             return []
-        if tool in UI_ACTION_TOOLS or tool_call_id in self.ui_call_ids:
-            # Client already got the ui_action event;
-            # the ack stays in history, loop continues.
+        if parse_tool_name(tool) is not None and ui_action_for(parse_tool_name(tool)) is not None:
+            return []
+        if tool_call_id in self.ui_call_ids:
             return []
         events = [
             {
@@ -261,6 +263,22 @@ class TurnState:
                 events.append(widget)
         return events
 
+    def handle_node_update(self, node_update: dict[str, Any] | None) -> list[dict[str, Any]]:
+        """Translate one `updates`-mode node payload into SSE events."""
+        message_payload = node_update.get("messages") if isinstance(node_update, dict) else None
+        if not message_payload:
+            return []
+        messages = message_payload if isinstance(message_payload, list) else [message_payload]
+        events: list[dict[str, Any]] = []
+        for message in messages:
+            if isinstance(message, ToolMessage):
+                events.extend(self.translate_tool_message(message))
+            for tool_call in getattr(message, "tool_calls", None) or []:
+                event = self.route_tool_call(tool_call)
+                if event is not None:
+                    events.append(event)
+        return events
+
 
 async def run_turn(
     *,
@@ -270,21 +288,20 @@ async def run_turn(
     provider: str | None = None,
     model: str | None = None,
     client: ClientInfo | None = None,
-    is_disconnected=None,
-) -> AsyncGenerator[dict, None]:
+    is_disconnected: Callable[[], Awaitable[bool]] | None = None,
+) -> AsyncGenerator[dict[str, Any], None]:
     """Run one full reason/act loop for this turn, yielding event dicts.
 
-    `client` is the optional validated ChatRequest.client with
-    kind/capabilities/ui_state. Only clients advertising `"ui_action"` get
-    the UI tools and their `ui_action` events.
+    Only clients advertising the ui_action capability get the UI tools
+    and their ui_action events.
     """
     try:
         llm = make_llm(provider=provider, model=model)
         active_provider, active_model = config.resolve_provider_and_model(
             provider, model
         )
-    except (ValueError, RuntimeError) as e:
-        yield {"type": ChatEventType.ERROR.value, "message": str(e)}
+    except (ValueError, RuntimeError) as exc:
+        yield {"type": ChatEventType.ERROR.value, "message": str(exc)}
         return
 
     if client is not None:
@@ -312,12 +329,11 @@ async def run_turn(
         user_message,
     ]
 
-    fresh: list = []
-    state = TurnState(user_id=user_id, capabilities=capabilities)
+    new_history_messages: list = []
+    turn_state = TurnState(user_id=user_id, capabilities=capabilities)
 
     try:
-        # asyncio.timeout (not an elapsed check inside the loop): fires even
-        # when the provider hangs without yielding any chunk.
+        # asyncio.timeout fires even when the provider hangs without yielding.
         async with asyncio.timeout(config.TURN_TIMEOUT_SECONDS):
             async for mode, data in agent.astream(
                 {"messages": messages},
@@ -330,32 +346,33 @@ async def run_turn(
                     break
 
                 if mode == "messages":
-                    chunk, _meta = data
-                    for event in state.translate_message_chunk(chunk):
+                    chunk, _metadata = data
+                    for event in turn_state.translate_message_chunk(chunk):
                         yield event
                 elif mode == "updates":
-                    for _node, update in (data or {}).items():
-                        upd = update.get("messages") if isinstance(update, dict) else None
-                        if not upd:
-                            continue
-                        msgs = upd if isinstance(upd, list) else [upd]
-                        for m in msgs:
-                            if isinstance(m, ToolMessage):
-                                for event in state.translate_tool_message(m):
-                                    yield event
-                            for tc in getattr(m, "tool_calls", None) or []:
-                                event = state.route_tool_call(tc)
-                                if event is not None:
-                                    yield event
-                        fresh.extend(msgs)
-                    if state.ask_done:
+                    for _node_name, node_update in (data or {}).items():
+                        for event in turn_state.handle_node_update(node_update):
+                            yield event
+                        update_messages = (
+                            node_update.get("messages")
+                            if isinstance(node_update, dict)
+                            else None
+                        )
+                        if update_messages:
+                            items = (
+                                update_messages
+                                if isinstance(update_messages, list)
+                                else [update_messages]
+                            )
+                            new_history_messages.extend(items)
+                    if turn_state.ask_done:
                         break
 
-        if fresh:
+        if new_history_messages:
             await history.append_turn(
                 user_id,
                 thread_id,
-                [user_message, *strip_artifacts(fresh)],
+                [user_message, *strip_artifacts(new_history_messages)],
                 provider=active_provider,
                 model=active_model,
             )
@@ -366,6 +383,6 @@ async def run_turn(
             "type": ChatEventType.ERROR.value,
             "message": f"Turn timed out after {config.TURN_TIMEOUT_SECONDS:g}s. Try a smaller request.",
         }
-    except Exception as e:
+    except Exception:
         logger.exception("chat turn failed (user_id=%s)", user_id)
-        yield {"type": ChatEventType.ERROR.value, "message": f"that turn failed ({e}). Try rephrasing."}
+        yield {"type": ChatEventType.ERROR.value, "message": "that turn failed. Try rephrasing."}

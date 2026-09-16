@@ -5,7 +5,7 @@ export function AssistantWidgets({ widgets }: { widgets: AssistantWidgetData[] }
     return (
         <>
             {widgets.map((widget, i) => (
-                <AssistantWidget key={i} widget={widget} />
+                <AssistantWidget key={`${widget.kind}-${i}`} widget={widget} />
             ))}
         </>
     );

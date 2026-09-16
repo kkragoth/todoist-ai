@@ -5,7 +5,7 @@ export function UiNotices({ notices }: { notices: AssistantUiNotice[] }) {
     return (
         <>
             {notices.map((notice, i) => (
-                <UiNotice key={i} notice={notice} />
+                <UiNotice key={`${notice.action}-${notice.summary}-${i}`} notice={notice} />
             ))}
         </>
     );

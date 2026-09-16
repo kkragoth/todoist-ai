@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 REDIS_URL = get_settings().redis_url
 
+# Bound per-connection queues so one slow SSE tab cannot grow memory
+# without bound; oldest events drop first (client re-fetches via REST).
+SSE_QUEUE_MAXSIZE = 100
+
 _subscribers: dict[int, set[asyncio.Queue]] = defaultdict(set)
 
 _sync_redis = None
@@ -60,9 +64,9 @@ async def _async_client():
 
 def subscribe(user_id: int) -> asyncio.Queue:
     """Register one SSE connection; returns its private queue."""
-    q: asyncio.Queue = asyncio.Queue()
-    _subscribers[user_id].add(q)
-    return q
+    queue: asyncio.Queue = asyncio.Queue(maxsize=SSE_QUEUE_MAXSIZE)
+    _subscribers[user_id].add(queue)
+    return queue
 
 
 def unsubscribe(user_id: int, q: asyncio.Queue) -> None:
@@ -74,10 +78,25 @@ def unsubscribe(user_id: int, q: asyncio.Queue) -> None:
             _subscribers.pop(user_id, None)
 
 
+def _offer(queue: asyncio.Queue, event: dict) -> None:
+    """Non-blocking offer; drops oldest on a full queue, then enqueues."""
+    try:
+        queue.put_nowait(event)
+    except asyncio.QueueFull:
+        try:
+            queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            pass
+
+
 def broadcast(user_id: int, event: dict) -> None:
     """Fan out one JSON-serializable event to all of this user's tabs."""
-    for q in list(_subscribers.get(user_id, ())):
-        q.put_nowait(event)
+    for queue in list(_subscribers.get(user_id, ())):
+        _offer(queue, event)
     client = _sync_client()
     if client is not None:
         try:
@@ -86,7 +105,7 @@ def broadcast(user_id: int, event: dict) -> None:
             logger.warning("redis publish failed: %s", e)
 
 
-async def redis_forward_loop(user_id: int, q: asyncio.Queue) -> None:
+async def redis_forward_loop(user_id: int, queue: asyncio.Queue) -> None:
     """Bridge Redis channel -> local queue. Ends when cancelled."""
     client = await _async_client()
     if client is None:
@@ -94,11 +113,11 @@ async def redis_forward_loop(user_id: int, q: asyncio.Queue) -> None:
     pubsub = client.pubsub()
     await pubsub.subscribe(channel(user_id))
     try:
-        async for msg in pubsub.listen():
-            if msg.get("type") != "message":
+        async for message in pubsub.listen():
+            if message.get("type") != "message":
                 continue
             try:
-                q.put_nowait(json.loads(msg["data"]))
+                _offer(queue, json.loads(message["data"]))
             except Exception:
                 pass
     except asyncio.CancelledError:

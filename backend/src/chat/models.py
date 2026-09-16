@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, JSON, String
 from sqlalchemy.orm import relationship
 
 from core.database import Base
@@ -8,6 +8,7 @@ from core.database import Base
 
 class ChatThread(Base):
     __tablename__ = "chat_threads"
+    __table_args__ = (Index("ix_chat_threads_user_updated", "user_id", "updated_at"),)
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
@@ -25,6 +26,7 @@ class ChatThread(Base):
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
+    __table_args__ = (Index("ix_chat_messages_thread_id", "thread_id", "id"),)
 
     id = Column(Integer, primary_key=True, index=True)
     thread_id = Column(Integer, ForeignKey("chat_threads.id"), index=True)

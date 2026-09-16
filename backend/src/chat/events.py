@@ -13,30 +13,27 @@ from langchain_core.messages import ToolMessage
 
 from . import config
 from .protocol import (
-    MAX_SUGGESTION_CHARS as SUGGESTION_CHARS,
+    MAX_SUGGESTION_CHARS,
+    MAX_SUGGESTIONS,
+    UI_DATA_MAX_ROWS,
+    UI_STATE_KEYS,
+    ChatEventType,
+    WidgetKind,
 )
-from .protocol import (
-    MAX_SUGGESTIONS as SUGGESTION_LIMIT,
-)
-from .protocol import UI_DATA_MAX_ROWS, UI_STATE_KEYS, ChatEventType, WidgetKind
-
-# Max chips per turn / chars per chip for `ui_suggestions`.
-MAX_SUGGESTIONS = SUGGESTION_LIMIT
-MAX_SUGGESTION_CHARS = SUGGESTION_CHARS
 
 
-def clean_suggestions(raw) -> list[str]:
+def clean_suggestions(raw: object) -> list[str]:
     """Clean suggest_followups args into chip labels. Mirrors the frontend
     caps in `chat.ts` so both ends agree on max 4 chips of 40 chars."""
     items = raw if isinstance(raw, list) else []
     return [
-        str(s).strip()[:MAX_SUGGESTION_CHARS]
-        for s in items
-        if str(s).strip()
+        str(item).strip()[:MAX_SUGGESTION_CHARS]
+        for item in items
+        if str(item).strip()
     ][:MAX_SUGGESTIONS]
 
 
-def build_ui_data_event(artifact) -> dict | None:
+def build_ui_data_event(artifact: object) -> dict | None:
     """Build a `ui_data` todo_list widget from a list_todos artifact.
 
     None when there is nothing worth rendering (empty/error results carry
@@ -76,9 +73,13 @@ def strip_artifacts(messages: list) -> list:
     return stripped
 
 
-def format_ui_context(ui_state) -> str | None:
-    """Render opaque client view state for the prompt. Never trusts enums —
-    the client re-validates everything before applying."""
+def format_ui_context(ui_state: object) -> str | None:
+    """Render opaque client view state for the prompt.
+
+    Values are sanitized (single-line, truncated) so a compromised
+    client cannot inject instructions via newlines or long payloads.
+    The client re-validates everything before applying.
+    """
     if not isinstance(ui_state, dict) or not ui_state:
         return None
     parts = []
@@ -86,11 +87,15 @@ def format_ui_context(ui_state) -> str | None:
         value = ui_state.get(key)
         if value is None or value == "":
             continue
-        parts.append(f"{key}={value}")
-    return ", ".join(parts) or None
+        text = str(value).replace("\n", " ").replace("\r", " ").strip()
+        if not text:
+            continue
+        parts.append(f"{key}={text[:80]}")
+    joined = ", ".join(parts)
+    return joined[:500] or None
 
 
-def normalize_ask(args) -> dict | None:
+def normalize_ask(args: object) -> dict | None:
     """Build an ask_user event from raw tool args. None when unusable."""
     if not isinstance(args, dict):
         return None
@@ -110,7 +115,7 @@ def normalize_ask(args) -> dict | None:
     }
 
 
-def text_delta(content) -> str:
+def text_delta(content: object) -> str:
     """Extract printable text from an LLM chunk's content.
 
     Handles plain strings and content blocks like [{"type": "text", ...}].
@@ -129,7 +134,7 @@ def text_delta(content) -> str:
     return ""
 
 
-def safe_text(value) -> str:
+def safe_text(value: object) -> str:
     """Coerce anything to SSE-safe text. ToolMessage content is str today,
     but a future tool returning structured content must not kill the
     stream inside json.dumps in router.py."""

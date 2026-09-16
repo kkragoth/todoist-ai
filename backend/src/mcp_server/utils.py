@@ -20,21 +20,35 @@ from auth.utils import security
 from core.database import SessionLocal
 
 
-def resolve_user_from_headers(headers: dict) -> User:
+def _bearer_token(headers: dict[str, str] | None) -> str | None:
+    """Case-insensitive Authorization lookup (proxies may change case)."""
+    if not headers:
+        return None
+    auth_header = ""
+    for key, value in headers.items():
+        if key.lower() == "authorization":
+            auth_header = value or ""
+            break
+    if not auth_header.lower().startswith("bearer "):
+        return None
+    return auth_header[7:].strip() or None
+
+
+def resolve_user_from_headers(headers: dict[str, str] | None) -> User:
     """Resolve the JWT user from request headers. Raises ValueError if bad."""
-    auth = (headers or {}).get("authorization", "")
-    if not auth.startswith("Bearer "):
+    token = _bearer_token(headers)
+    if not token:
         raise ValueError("Missing Authorization header — log in first.")
-    token = auth[len("Bearer ") :].strip()
     try:
         payload = security.decode_access_token(token)
-        username: str | None = payload.get("sub")
+        subject: object = payload.get("sub")
     except Exception:
         raise ValueError("Invalid or expired token — log in again.")
-    if not username:
-        raise ValueError("Invalid token — log in again.")
     with SessionLocal() as db:
-        user = db.query(User).filter(User.username == username).first()
+        user = security.resolve_user_from_token_payload(db, subject)
+        # Detach before the session closes so callers can use scalar attrs.
+        if user is not None:
+            db.expunge(user)
     if not user:
-        raise ValueError("User not found — register first.")
+        raise ValueError("Invalid token — log in again.")
     return user

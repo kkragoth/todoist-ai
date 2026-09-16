@@ -67,10 +67,11 @@ def resolve_provider_and_model(
     provider: str | None, model: str | None
 ) -> tuple[str, str]:
     """Resolve effective (provider, model), validating the provider name."""
-    p = (provider or LLM_PROVIDER).lower()
+    effective = provider if provider is not None else LLM_PROVIDER
+    p = effective.lower()
     if p not in VALID_PROVIDERS:
         raise ValueError(
-            f"Unknown provider '{provider}'. Choose one of: {', '.join(VALID_PROVIDERS)}."
+            f"Unknown provider '{effective}'. Choose one of: {', '.join(VALID_PROVIDERS)}."
         )
     if p == LlmProvider.OPENROUTER.value and not OPENROUTER_ENABLED:
         raise ValueError(

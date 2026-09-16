@@ -79,7 +79,7 @@ WIDGET_INSTRUCTIONS = (
 )
 
 
-def DYNAMIC_INSTRUCTIONS(today: date) -> str:
+def dynamic_instructions(today: date) -> str:
     """Dynamic prompt suffix. Takes the date, returns the closing lines.
 
     Kept as a separate callable (and rendered LAST) so the static block
@@ -88,12 +88,16 @@ def DYNAMIC_INSTRUCTIONS(today: date) -> str:
     return f"---\nToday is {today.isoformat()} ({today.strftime('%A')})."
 
 
+# Backward-compat alias (was upper-case function name).
+DYNAMIC_INSTRUCTIONS = dynamic_instructions
+
+
 def system_prompt(today: date, ui_context: str | None = None, has_ui_tools: bool = False) -> SystemMessage:
     """Static blocks first (prefix-cache stable), date + UI context last."""
     content = STATIC_INSTRUCTIONS
     if has_ui_tools:
         content += f"\n{UI_INSTRUCTIONS}{WIDGET_INSTRUCTIONS}"
-    content += f"\n{DYNAMIC_INSTRUCTIONS(today)}"
+    content += f"\n{dynamic_instructions(today)}"
     if ui_context:
         content += f"\nCurrently shown in the web UI: {ui_context}"
     return SystemMessage(content=content)

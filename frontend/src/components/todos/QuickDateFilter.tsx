@@ -1,12 +1,7 @@
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import { useSearch } from "@tanstack/react-router";
 import { SegmentedControl } from "@/components/todos/SegmentedControl";
-import {
-    DatePreset,
-    datePresetLabel,
-    parseDatePresetStrict,
-    stripDatesUnlessCustom,
-    type TodosSearchParams,
-} from "@/lib/todos-filters";
+import { useUpdateTodosSearch } from "@/hooks/useTodosSearch";
+import { DatePreset, datePresetLabel, parseDatePresetStrict } from "@/lib/todos-filters";
 
 const QUICK_PRESETS = [DatePreset.All, DatePreset.Overdue, DatePreset.Today, DatePreset.Tomorrow];
 
@@ -17,11 +12,7 @@ const QUICK_PRESETS = [DatePreset.All, DatePreset.Overdue, DatePreset.Today, Dat
  */
 export function QuickDateFilter() {
     const search = useSearch({ from: "/todos" });
-    const navigate = useNavigate({ from: "/todos" });
-
-    function updateSearch(patch: Partial<TodosSearchParams>) {
-        navigate({ to: "/todos", search: stripDatesUnlessCustom({ ...search, ...patch }) });
-    }
+    const updateSearch = useUpdateTodosSearch();
 
     function selectPreset(value: string) {
         const preset = parseDatePresetStrict(value);

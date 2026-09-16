@@ -1,12 +1,7 @@
-// Point-in-time snapshot of a chat listing. Rows are compact and clickable:
-// the body highlights + scrolls to the real row in the main list, the
-// checkbox toggles completion through the same mutation as TodoRow.
-
 import { useState } from "react";
 import { cn } from "cn";
 import { ChevronRight } from "lucide-react";
 import { TodoWidgetRows } from "@/components/assistant/TodoWidgetRows";
-import { highlightTodoIds } from "@/lib/highlight-todos";
 import type { TodoListWidgetData } from "@/lib/chat";
 
 const WIDGET_VISIBLE_ROWS = 8;
@@ -15,10 +10,6 @@ export function TodoListWidget({ widget }: { widget: TodoListWidgetData }) {
     const [collapsed, setCollapsed] = useState(false);
     const [expanded, setExpanded] = useState(false);
     const visible = expanded ? widget.todos : widget.todos.slice(0, WIDGET_VISIBLE_ROWS);
-
-    function handleHighlight(id: number) {
-        highlightTodoIds([id]);
-    }
 
     return (
         <div className="mt-2 overflow-hidden rounded-lg border border-border bg-card">
@@ -48,7 +39,7 @@ export function TodoListWidget({ widget }: { widget: TodoListWidgetData }) {
             </button>
             {!collapsed && (
                 <>
-                    <TodoWidgetRows todos={visible} onHighlight={handleHighlight} />
+                    <TodoWidgetRows todos={visible} />
                     {widget.todos.length > WIDGET_VISIBLE_ROWS && (
                         <button
                             type="button"

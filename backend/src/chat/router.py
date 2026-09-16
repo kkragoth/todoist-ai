@@ -27,6 +27,7 @@ from auth.utils.security import get_current_user
 
 from . import config, history, service
 from .schemas import ChatRequest, HistoryOut, ThreadSummary
+from core.settings import LlmProvider
 
 logger = logging.getLogger(__name__)
 
@@ -36,18 +37,24 @@ router = APIRouter(prefix="/api/chat", tags=["Chat"])
 def validate_provider(body: ChatRequest) -> tuple[str, str]:
     try:
         return config.resolve_provider_and_model(body.provider, body.model)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+def validated_provider_model(body: ChatRequest) -> tuple[str, str]:
+    """FastAPI dependency so provider 422 runs before auth 401."""
+    return validate_provider(body)
 
 
 @router.post("")
 async def chat(
     body: ChatRequest,
     request: Request,
+    validated: tuple[str, str] = Depends(validated_provider_model),
     current_user: User = Depends(get_current_user),
 ):
-    provider, model = validate_provider(body)
-    if provider == "openrouter" and not config.OPENROUTER_API_KEY:
+    provider, model = validated
+    if provider == LlmProvider.OPENROUTER.value and not config.OPENROUTER_API_KEY:
         raise HTTPException(
             status_code=500,
             detail="OpenRouter selected but OPENROUTER_API_KEY is not set.",
@@ -61,7 +68,7 @@ async def chat(
         model,
     )
 
-    async def gen():
+    async def event_stream():
         async for event in service.run_turn(
             user_id=current_user.id,
             user_text=body.message,
@@ -74,7 +81,7 @@ async def chat(
             yield f"data: {json.dumps(event)}\n\n"
 
     return StreamingResponse(
-        gen(),
+        event_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

@@ -12,7 +12,13 @@ import {
     UiActionKind,
     type ChatClientInfo,
 } from "@/lib/chat";
-import { resolveAssistantPick, useAssistantStore } from "@/stores/assistant-store";
+import {
+    AssistantStatus,
+    resolveAssistantPick,
+    runningStatus,
+    turnFailedStatus,
+    useAssistantStore,
+} from "@/stores/assistant-store";
 
 export interface AssistantTurnContext {
     /** Snapshot of current view/filter state for the prompt (`ui_state`). */
@@ -31,7 +37,7 @@ export async function startAssistantTurn(userText: string, ctx: AssistantTurnCon
     const assistantId = store.pushAssistantPlaceholder();
     const chat = useAssistantStore.getState();
     chat.setBusy(true);
-    chat.setStatus("Thinking…");
+    chat.setStatus(AssistantStatus.Thinking);
     const ctrl = new AbortController();
     abortController = ctrl;
     let sawContent = false;
@@ -59,11 +65,11 @@ export async function startAssistantTurn(userText: string, ctx: AssistantTurnCon
                 case ChatEventType.ToolCall:
                     sawContent = true;
                     s.addToolCall(assistantId, evt.tool, evt.args);
-                    s.setStatus(`Running ${evt.tool}…`);
+                    s.setStatus(runningStatus(evt.tool));
                     break;
                 case ChatEventType.ToolResult:
                     s.setToolResult(assistantId, evt.tool, evt.output);
-                    s.setStatus("Thinking…");
+                    s.setStatus(AssistantStatus.Thinking);
                     break;
                 case ChatEventType.UiData:
                     sawContent = true;
@@ -80,7 +86,7 @@ export async function startAssistantTurn(userText: string, ctx: AssistantTurnCon
                         typeof evt.question === "string" && evt.question.trim() ? evt.question : "Could you clarify?";
                     const options = Array.isArray(evt.options) ? evt.options.filter((o) => typeof o === "string") : [];
                     s.setClarification(assistantId, question, options);
-                    s.setStatus("Waiting for your answer…");
+                    s.setStatus(AssistantStatus.Waiting);
                     break;
                 }
                 case ChatEventType.UiAction: {
@@ -98,11 +104,11 @@ export async function startAssistantTurn(userText: string, ctx: AssistantTurnCon
                     break;
                 }
                 case ChatEventType.Error:
-                    s.appendAssistantText(assistantId, `That turn failed (${evt.message}). Try rephrasing.`);
-                    s.setStatus("Turn failed.");
+                    s.appendAssistantText(assistantId, turnFailedStatus(evt.message));
+                    s.setStatus(AssistantStatus.Failed);
                     break;
                 case ChatEventType.Done:
-                    s.setStatus(sawAsk ? "Waiting for your answer…" : "Ready.");
+                    s.setStatus(sawAsk ? AssistantStatus.Waiting : AssistantStatus.Ready);
                     break;
                 default: {
                     const _exhaustive: never = evt;
@@ -114,18 +120,18 @@ export async function startAssistantTurn(userText: string, ctx: AssistantTurnCon
         if (!sawContent) {
             const current = useAssistantStore.getState().messages.find((m) => m.id === assistantId);
             if (current && current.text === "" && current.widgets.length === 0) {
-                useAssistantStore.getState().appendAssistantText(assistantId, "(no reply — empty turn)");
+                useAssistantStore.getState().appendAssistantText(assistantId, AssistantStatus.Empty);
             }
         }
     } catch (e) {
         const s = useAssistantStore.getState();
         if (e instanceof DOMException && e.name === "AbortError") {
-            s.appendAssistantText(assistantId, "Turn cancelled.");
-            s.setStatus("Ready.");
+            s.appendAssistantText(assistantId, AssistantStatus.Cancelled);
+            s.setStatus(AssistantStatus.Ready);
         } else {
             const message = e instanceof Error ? e.message : String(e);
-            s.appendAssistantText(assistantId, `That turn failed (${message}). Try rephrasing.`);
-            s.setStatus("Turn failed.");
+            s.appendAssistantText(assistantId, turnFailedStatus(message));
+            s.setStatus(AssistantStatus.Failed);
         }
     } finally {
         useAssistantStore.getState().setBusy(false);

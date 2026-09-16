@@ -9,6 +9,8 @@ from collections.abc import Callable
 
 from langchain_core.language_models.chat_models import BaseChatModel
 
+from core.settings import LlmProvider
+
 from . import config
 
 
@@ -21,6 +23,8 @@ def _make_llamacpp(model: str) -> BaseChatModel:
         model=model,
         temperature=0,
         streaming=True,
+        request_timeout=120,
+        max_retries=1,
     )
 
 
@@ -42,6 +46,8 @@ def _make_openrouter(model: str) -> BaseChatModel:
         "model": model,
         "temperature": 0,
         "streaming": True,
+        "request_timeout": 120,
+        "max_retries": 1,
     }
     if headers:
         kwargs["default_headers"] = headers
@@ -51,16 +57,21 @@ def _make_openrouter(model: str) -> BaseChatModel:
 def _make_ollama(model: str) -> BaseChatModel:
     from langchain_ollama import ChatOllama
 
-    kwargs: dict = {"model": model, "temperature": 0}
+    kwargs: dict = {
+        "model": model,
+        "temperature": 0,
+        "client_kwargs": {"timeout": 120},
+        "async_client_kwargs": {"timeout": 120},
+    }
     if config.OLLAMA_BASE_URL:
         kwargs["base_url"] = config.OLLAMA_BASE_URL
     return ChatOllama(**kwargs)
 
 
-PROVIDER_FACTORIES: dict[str, Callable[[str], BaseChatModel]] = {
-    "llamacpp": _make_llamacpp,
-    "openrouter": _make_openrouter,
-    "ollama": _make_ollama,
+PROVIDER_FACTORIES: dict[LlmProvider, Callable[[str], BaseChatModel]] = {
+    LlmProvider.LLAMACPP: _make_llamacpp,
+    LlmProvider.OPENROUTER: _make_openrouter,
+    LlmProvider.OLLAMA: _make_ollama,
 }
 
 
@@ -73,6 +84,4 @@ def make_llm(provider: str | None = None, model: str | None = None):
     active_provider, active_model = config.resolve_provider_and_model(
         provider, model
     )
-    # Total: resolve_provider_and_model already rejects unknown providers,
-    # and the registry covers every member of VALID_PROVIDERS.
-    return PROVIDER_FACTORIES[active_provider](active_model)
+    return PROVIDER_FACTORIES[LlmProvider(active_provider)](active_model)

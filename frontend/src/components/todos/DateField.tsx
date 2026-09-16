@@ -4,11 +4,13 @@
 // language parsing in the parent keeps working — the label just reflects
 // whatever date results).
 
-import { useEffect, useId, useRef, useState } from "react";
-import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { Calendar } from "lucide-react";
 import { cn } from "cn";
 import { CalendarDays } from "@/components/todos/CalendarDays";
-import { addDaysISO, monthCursorOf, monthGrid, monthLabel, shiftMonthCursor } from "@/lib/dates";
+import { DateShortcuts } from "@/components/todos/DateShortcuts";
+import { MonthNav } from "@/components/todos/MonthNav";
+import { monthCursorOf, monthGrid } from "@/lib/dates";
 import { todayISO } from "@/lib/todos-filters";
 
 export function DateField({
@@ -34,7 +36,7 @@ export function DateField({
     const [cursor, setCursor] = useState(() => monthCursorOf(value));
     const rootRef = useRef<HTMLDivElement>(null);
     const popoverId = useId();
-    const today = todayISO();
+    const today = useMemo(() => todayISO(), []);
 
     useEffect(() => {
         if (!open) return;
@@ -88,58 +90,9 @@ export function DateField({
                     aria-label="Pick a date"
                     className="absolute right-0 z-30 mt-1.5 w-60 rounded-xl border border-border bg-card p-3 shadow-lg"
                 >
-                    <div className="mb-2 flex items-center justify-between">
-                        <button
-                            type="button"
-                            aria-label="Previous month"
-                            onClick={() => setCursor((c) => shiftMonthCursor(c, -1))}
-                            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                            <ChevronLeft className="size-4" />
-                        </button>
-                        <p className="text-xs font-semibold">{monthLabel(cursor.year, cursor.month)}</p>
-                        <button
-                            type="button"
-                            aria-label="Next month"
-                            onClick={() => setCursor((c) => shiftMonthCursor(c, 1))}
-                            className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                            <ChevronRight className="size-4" />
-                        </button>
-                    </div>
+                    <MonthNav cursor={cursor} onCursor={setCursor} />
                     <CalendarDays cells={cells} value={value} today={today} onSelect={pick} />
-                    <div className="mt-2 flex flex-wrap gap-1 border-t border-border/60 pt-2">
-                        <button
-                            type="button"
-                            onClick={() => pick(today)}
-                            className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                            Today
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => pick(addDaysISO(today, 1))}
-                            className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                            Tomorrow
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => pick(addDaysISO(today, 7))}
-                            className="rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                            +1wk
-                        </button>
-                        {allowClear && value && (
-                            <button
-                                type="button"
-                                onClick={() => pick("")}
-                                className="ml-auto rounded-md px-1.5 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-                            >
-                                Clear
-                            </button>
-                        )}
-                    </div>
+                    <DateShortcuts today={today} value={value} allowClear={allowClear} onPick={pick} />
                 </div>
             )}
         </div>
