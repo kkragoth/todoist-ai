@@ -1,8 +1,13 @@
 """Auth helper for MCP tools.
 
-Auth comes from the HTTP Authorization header (Bearer JWT) — the model
-never sees or supplies credentials. Every tool resolves the current
-user with resolve_user_from_headers and only touches that user's rows.
+Primary identity is the OAuth access token FastMCP verified for this
+request (see ``mcp_server/oauth.py``) — the model never sees or supplies
+credentials. Legacy ``Authorization: Bearer`` JWTs from ``POST
+/auth/token`` keep working as a fallback (same signing key), so the CLI
+``--mcp-direct`` mode and old static-header configs are unaffected.
+
+Every tool resolves the current user with resolve_user and only touches
+that user's rows.
 """
 
 import jwt
@@ -10,6 +15,17 @@ import jwt
 from auth.models import User
 from auth.utils.security import ALGORITHM, SECRET_KEY
 from core.database import SessionLocal
+
+
+def _load_user(username: str) -> User:
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+    finally:
+        db.close()
+    if not user:
+        raise ValueError("User not found — register first.")
+    return user
 
 
 def resolve_user_from_headers(headers: dict) -> User:
@@ -25,11 +41,21 @@ def resolve_user_from_headers(headers: dict) -> User:
         raise ValueError("Invalid or expired token — log in again.")
     if not username:
         raise ValueError("Invalid token — log in again.")
-    db = SessionLocal()
+    return _load_user(username)
+
+
+def resolve_user(headers: dict | None = None) -> User:
+    """Resolve the current user: OAuth token first, header JWT fallback."""
     try:
-        user = db.query(User).filter(User.username == username).first()
-    finally:
-        db.close()
-    if not user:
-        raise ValueError("User not found — register first.")
-    return user
+        from fastmcp.server.dependencies import get_access_token
+    except Exception:
+        return resolve_user_from_headers(headers or {})
+    try:
+        token = get_access_token()
+    except Exception:
+        token = None
+    if token is not None:
+        username = token.subject or (token.claims or {}).get("sub")
+        if username:
+            return _load_user(username)
+    return resolve_user_from_headers(headers or {})

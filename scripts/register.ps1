@@ -8,7 +8,7 @@
 #   $env:TODO_USER / $env:TODO_PASS.
 #
 # Backend must be running.
-# Next step: dot-source .\scripts\set_token.ps1 to log in.
+# Next step: run `opencode mcp auth todoist-ai` and log in as this user.
 
 [CmdletBinding()]
 param(

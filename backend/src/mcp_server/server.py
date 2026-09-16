@@ -5,4 +5,7 @@ import-cycle safe."""
 
 from fastmcp import FastMCP
 
-mcp = FastMCP("Todoist AI MCP")
+from mcp_server.oauth import get_oauth_provider
+
+oauth_provider = get_oauth_provider()
+mcp = FastMCP("Todoist AI MCP", auth=oauth_provider)

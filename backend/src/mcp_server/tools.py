@@ -7,7 +7,7 @@ calls in-process.
 from fastmcp.dependencies import CurrentHeaders
 
 from mcp_server.server import mcp
-from mcp_server.utils import resolve_user_from_headers
+from mcp_server.utils import resolve_user
 from todo import service as todo_service
 
 
@@ -32,7 +32,7 @@ def list_todos(
         overdue: True = only past-due open tasks.
     """
     try:
-        user = resolve_user_from_headers(headers)
+        user = resolve_user(headers)
     except ValueError as e:
         return f"Error: {e}"
     return todo_service.list_todos(
@@ -71,7 +71,7 @@ def list_todos_structured(
         overdue: True = only past-due open tasks.
     """
     try:
-        user = resolve_user_from_headers(headers)
+        user = resolve_user(headers)
     except ValueError as e:
         return {"error": str(e), "open": 0, "done": 0, "todos": []}
     try:
@@ -101,7 +101,7 @@ def add_todo(
         todo_date: Target date in YYYY-MM-DD format. Defaults to today if omitted.
     """
     try:
-        user = resolve_user_from_headers(headers)
+        user = resolve_user(headers)
     except ValueError as e:
         return f"Error: {e}"
     return todo_service.add_todo(user.id, task=task, todo_date=todo_date)
@@ -129,7 +129,7 @@ def update_todo(
         completed: True = mark done, False = mark open (omit to keep).
     """
     try:
-        user = resolve_user_from_headers(headers)
+        user = resolve_user(headers)
     except ValueError as e:
         return f"Error: {e}"
     return todo_service.update_todo(
@@ -155,7 +155,7 @@ def archive_todo(
         todo_id: The ID of the task to archive.
     """
     try:
-        user = resolve_user_from_headers(headers)
+        user = resolve_user(headers)
     except ValueError as e:
         return f"Error: {e}"
     return todo_service.archive_todo(user.id, todo_id=todo_id)
@@ -174,7 +174,7 @@ def delete_todo(
         todo_id: The ID of the task to delete.
     """
     try:
-        user = resolve_user_from_headers(headers)
+        user = resolve_user(headers)
     except ValueError as e:
         return f"Error: {e}"
     return todo_service.delete_todo(user.id, todo_id=todo_id)
