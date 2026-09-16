@@ -6,15 +6,7 @@ import { ToolCalls } from "@/components/assistant/ToolCalls";
 import { UiNotices } from "@/components/assistant/UiNotices";
 import type { AssistantMessage } from "@/stores/assistant-store";
 
-export function AssistantBubble({
-    message,
-    onSend,
-    isLatest,
-}: {
-    message: AssistantMessage;
-    onSend: (text: string) => void;
-    isLatest: boolean;
-}) {
+export function AssistantBubble({ message, isLatest }: { message: AssistantMessage; isLatest: boolean }) {
     return (
         <div className="max-w-[92%] self-start text-sm text-muted-foreground">
             {message.text && <AssistantTextParts text={message.text} />}
@@ -22,7 +14,7 @@ export function AssistantBubble({
             {isLatest &&
                 message.clarification === undefined &&
                 (message.suggestions.length > 0 || message.widgets.length > 0) && (
-                    <FollowUpChips suggestions={message.suggestions} onSend={onSend} />
+                    <FollowUpChips suggestions={message.suggestions} />
                 )}
             {message.toolCalls.length > 0 && (
                 <details className="mt-1.5 text-xs">
@@ -36,7 +28,7 @@ export function AssistantBubble({
             {message.clarification && (
                 <div className="mt-2 rounded-lg border border-border bg-card p-2.5">
                     <p className="text-[13px] font-medium text-foreground">{message.clarification.question}</p>
-                    <ClarificationOptions options={message.clarification.options} onSend={onSend} />
+                    <ClarificationOptions options={message.clarification.options} />
                 </div>
             )}
         </div>

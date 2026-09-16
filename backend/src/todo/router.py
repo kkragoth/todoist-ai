@@ -1,18 +1,30 @@
-from datetime import date
-
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
-
 import asyncio
 import json
+from datetime import date
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
 from auth.models import User
 from auth.utils.security import get_current_user, get_query_user
 from core.database import get_db
-from . import events, schemas, models
+from . import events, models, schemas
+from . import service as todo_service
 
 router = APIRouter(prefix="/api/todos", tags=["Todos"])
+
+
+def _get_owned_todo_or_404(db: Session, user_id: int, todo_id: int) -> models.Todo:
+    todo = (
+        db.query(models.Todo)
+        .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
+        .first()
+    )
+    if not todo:
+        raise HTTPException(status_code=404, detail="Todo not found")
+    return todo
+
 
 @router.get("", response_model=list[schemas.TodoOut])
 def get_todos(
@@ -30,8 +42,6 @@ def get_todos(
     q is a fuzzy name filter on the task (substring-exact, typo-tolerant).
     Archived todos are hidden unless include_archived is True.
     Shape is unchanged (a JSON list) — the frontend `Todo[]` still fits."""
-    from . import service as todo_service
-
     try:
         todos = todo_service.query_todos(
             current_user.id,
@@ -42,25 +52,30 @@ def get_todos(
             date_from=date_from,
             date_to=date_to,
         )
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    return [schemas.TodoOut.model_validate(t) for t in todos]
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return [schemas.TodoOut.model_validate(todo) for todo in todos]
+
 
 @router.get("/events")
-async def todo_events(user: User = Depends(get_query_user)):
+async def todo_events(request: Request, user: User = Depends(get_query_user)):
     """SSE stream of todo changes for one user.
 
     The token rides in the query string because browsers can't set headers
     on an EventSource. get_query_user runs the same check as every other
-    endpoint, so a bad token gets the same 401.
+    endpoint, so a bad token gets the same 401. Security note: prefer a
+    short-lived SSE ticket over the 24h auth JWT; query tokens can land
+    in access logs.
     """
     queue = events.subscribe(user.id)
 
-    async def gen():
+    async def event_stream():
         bridge = asyncio.create_task(events.redis_forward_loop(user.id, queue))
         try:
             yield ": connected\n\n"
             while True:
+                if await request.is_disconnected():
+                    break
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=15)
                     yield f"data: {json.dumps(event)}\n\n"
@@ -68,10 +83,16 @@ async def todo_events(user: User = Depends(get_query_user)):
                     yield ": ping\n\n"
         finally:
             bridge.cancel()
+            try:
+                await bridge
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
             events.unsubscribe(user.id, queue)
 
     return StreamingResponse(
-        gen(),
+        event_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -80,36 +101,29 @@ async def todo_events(user: User = Depends(get_query_user)):
         },
     )
 
-@router.post("")
+
+@router.post("", response_model=schemas.TodoOut)
 def create_todo(
     todo: schemas.TodoCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
 ):
-    target_date = todo.todo_date or date.today()
-    new_todo = models.Todo(task=todo.task, todo_date=target_date, owner=current_user)
-    db.add(new_todo)
-    db.commit()
-    db.refresh(new_todo)
-    events.broadcast(current_user.id, {"type": "todos-changed", "action": "created", "id": new_todo.id})
-    return new_todo
+    return todo_service.create_todo_row(
+        current_user.id, task=todo.task, todo_date=todo.todo_date
+    )
 
-@router.patch("/{todo_id}")
+
+@router.patch("/{todo_id}", response_model=schemas.TodoOut)
 def update_todo(
     todo_id: int,
     update_data: schemas.TodoUpdate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Reschedule, complete/uncomplete, or archive a todo item."""
-    todo = db.query(models.Todo).filter(
-        models.Todo.id == todo_id,
-        models.Todo.user_id == current_user.id
-    ).first()
+    """Reschedule, rename, complete/uncomplete, or archive a todo item."""
+    todo = _get_owned_todo_or_404(db, current_user.id, todo_id)
 
-    if not todo:
-        raise HTTPException(status_code=404, detail="Todo not found")
-
+    if update_data.task is not None:
+        todo.task = update_data.task
     if update_data.todo_date is not None:
         todo.todo_date = update_data.todo_date
     if update_data.completed is not None:
@@ -119,5 +133,7 @@ def update_todo(
 
     db.commit()
     db.refresh(todo)
-    events.broadcast(current_user.id, {"type": "todos-changed", "action": "updated", "id": todo.id})
+    events.broadcast(
+        current_user.id, {"type": "todos-changed", "action": "updated", "id": todo.id}
+    )
     return todo

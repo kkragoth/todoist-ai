@@ -1,13 +1,15 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TodoCreate(BaseModel):
-    task: str
+    task: str = Field(min_length=1, max_length=500)
     todo_date: date | None = None
 
+
 class TodoUpdate(BaseModel):
+    task: str | None = Field(default=None, min_length=1, max_length=500)
     todo_date: date | None = None
     completed: bool | None = None
     archived: bool | None = None

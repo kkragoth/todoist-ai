@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -16,7 +16,7 @@ class ClientInfo(BaseModel):
         default_factory=list,
         description='e.g. ["ui_action"] for web clients that apply ui_action events locally.',
     )
-    ui_state: Optional[dict[str, Any]] = Field(
+    ui_state: dict[str, Any] | None = Field(
         default=None, description="Client-local view/filter snapshot for prompt context."
     )
 
@@ -25,20 +25,20 @@ class ChatRequest(BaseModel):
     """One chat turn. History is server-owned — the client only sends
     the new message plus which thread it belongs to."""
 
-    message: str = Field(min_length=1, description="The user's new message.")
-    thread_id: Optional[str] = Field(
+    message: str = Field(min_length=1, max_length=4000, description="The user's new message.")
+    thread_id: str | None = Field(
         default=None,
         description="Conversation thread id. Omit to continue the most recent thread.",
     )
     # Optional per-request provider override. When omitted, the server
     # default (LLM_PROVIDER env) applies. Easily swappable per call.
-    provider: Optional[str] = Field(
+    provider: str | None = Field(
         default=None, description="One of: ollama, llamacpp, openrouter."
     )
-    model: Optional[str] = Field(
+    model: str | None = Field(
         default=None, description="Model name for the provider. Defaults per provider env."
     )
-    client: Optional[ClientInfo] = Field(
+    client: ClientInfo | None = Field(
         default=None, description="Client kind + capabilities + view snapshot."
     )
 
@@ -46,17 +46,17 @@ class ChatRequest(BaseModel):
 class HistoryOut(BaseModel):
     thread_id: int
     title: str
-    provider: Optional[str] = None
-    model: Optional[str] = None
+    provider: str | None = None
+    model: str | None = None
     message_count: int
-    updated_at: Optional[str] = None
+    updated_at: str | None = None
     messages: list[dict[str, Any]]
 
 
 class ThreadSummary(BaseModel):
     thread_id: int
     title: str
-    provider: Optional[str] = None
-    model: Optional[str] = None
+    provider: str | None = None
+    model: str | None = None
     message_count: int
-    updated_at: Optional[str] = None
+    updated_at: str | None = None

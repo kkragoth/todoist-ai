@@ -31,7 +31,6 @@ import os
 import secrets
 import time
 
-import jwt
 from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
@@ -45,9 +44,8 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from auth.utils.security import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
-    ALGORITHM,
-    SECRET_KEY,
     create_access_token,
+    decode_access_token,
 )
 from fastmcp.server.auth.auth import (
     ClientRegistrationOptions,
@@ -278,11 +276,11 @@ class TodoOAuthProvider(OAuthProvider):
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            payload = decode_access_token(token)
         except Exception:
             return None
-        username = payload.get("sub")
-        if not username:
+        subject = payload.get("sub")
+        if not subject:
             return None
         raw_scopes = payload.get("scope") or payload.get("scp") or ""
         scopes = (
@@ -293,7 +291,7 @@ class TodoOAuthProvider(OAuthProvider):
             client_id=str(payload.get("cid") or "legacy"),
             scopes=scopes,
             expires_at=payload.get("exp"),
-            subject=username,
+            subject=str(subject),
             claims=dict(payload),
         )
 

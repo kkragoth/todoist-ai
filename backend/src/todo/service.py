@@ -21,16 +21,22 @@ owned by `user_id`. Mutations broadcast a `todos-changed` SSE event.
 from datetime import date
 from difflib import SequenceMatcher
 
+from sqlalchemy.orm import Session
+
 from core.database import SessionLocal
 from todo import events, models, schemas
 
-# Easy toggle for ambiguous "what are my todos" queries: None = show both
-# open and done with a summary line, False = open only, True = done only.
-# The chat/MCP `completed` arg overrides this only when explicitly passed.
-LIST_DEFAULT_COMPLETED: bool | None = None
-
 # Minimum SequenceMatcher ratio to keep a non-substring fuzzy hit.
 FUZZY_THRESHOLD = 0.4
+
+
+def _get_owned_todo(db: Session, user_id: int, todo_id: int) -> models.Todo | None:
+    """One user-scoped todo row, or None (never another user's row)."""
+    return (
+        db.query(models.Todo)
+        .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
+        .first()
+    )
 
 
 def fuzzy_score(query: str, text: str) -> float:
@@ -48,7 +54,7 @@ def fuzzy_score(query: str, text: str) -> float:
     return SequenceMatcher(None, q, t).ratio()
 
 
-def format_todos(todos: list) -> str:
+def format_todos(todos: list[models.Todo]) -> str:
     """Text presenter FOR THE LLM — display-ready lines echoed verbatim.
 
     First line is always a summary so ambiguous queries ("what are my
@@ -68,7 +74,7 @@ def format_todos_from_out(out: schemas.TodoListOut) -> str:
     return "\n".join(lines)
 
 
-def to_todo_list_out(todos: list) -> schemas.TodoListOut:
+def to_todo_list_out(todos: list[models.Todo]) -> schemas.TodoListOut:
     """JSON presenter FOR PROGRAMS — typed counts plus typed rows."""
     items = [
         schemas.TodoOut(
@@ -110,20 +116,21 @@ def query_todos(
     date_from: str | date | None = None,
     date_to: str | date | None = None,
     overdue: bool = False,
-) -> list:
+    limit: int = 200,
+) -> list[models.Todo]:
     """Pure data query: user-scoped ORM rows, fuzzy-ranked when `query`
     is given. Raises ValueError on bad date strings."""
     target = parse_filter_date(target_date, "target_date")
     start = parse_filter_date(date_from, "date_from")
     end = parse_filter_date(date_to, "date_to")
     today = date.today()
-    db = SessionLocal()
-    try:
+    safe_limit = max(1, min(limit, 500))
+    with SessionLocal() as db:
         db_query = db.query(models.Todo).filter(models.Todo.user_id == user_id)
         if completed is not None:
-            db_query = db_query.filter(models.Todo.completed == completed)
+            db_query = db_query.filter(models.Todo.completed.is_(completed))
         if not include_archived:
-            db_query = db_query.filter(models.Todo.archived == False)  # noqa: E712
+            db_query = db_query.filter(models.Todo.archived.is_(False))
         if target:
             db_query = db_query.filter(models.Todo.todo_date == target)
         if start:
@@ -133,14 +140,13 @@ def query_todos(
         if overdue:
             db_query = db_query.filter(models.Todo.todo_date < today)
             if completed is None:
-                db_query = db_query.filter(models.Todo.completed == False)  # noqa: E712
-        todos = db_query.order_by(models.Todo.id).all()
-    finally:
-        db.close()
+                db_query = db_query.filter(models.Todo.completed.is_(False))
+        todos = db_query.order_by(models.Todo.id).limit(safe_limit + 1).all()
+        todos = todos[:safe_limit]
     if query and query.strip():
-        scored = [(fuzzy_score(query, t.task), t) for t in todos]
+        scored = [(fuzzy_score(query, todo.task), todo) for todo in todos]
         scored.sort(key=lambda pair: pair[0], reverse=True)
-        todos = [t for s, t in scored if s >= FUZZY_THRESHOLD]
+        todos = [todo for score, todo in scored if score >= FUZZY_THRESHOLD]
     return todos
 
 
@@ -154,7 +160,11 @@ def list_todos(
     date_to: str | None = None,
     overdue: bool = False,
 ) -> str:
-    """Back-compat text wrapper for the chat agent. New code: `query_todos`."""
+    """Text wrapper over `query_todos` for chat/MCP agents.
+
+    New program code should prefer `query_todos` + `to_todo_list_out`
+    instead of parsing this text.
+    """
     try:
         todos = query_todos(
             user_id,
@@ -173,6 +183,26 @@ def list_todos(
     return format_todos(todos)
 
 
+def create_todo_row(
+    user_id: int,
+    task: str,
+    todo_date: date | None = None,
+) -> models.Todo:
+    """Single write path for REST: insert + broadcast, return detached row."""
+    from core.database import SessionLocal as _SessionLocal
+
+    target = todo_date or date.today()
+    with _SessionLocal() as db:
+        todo = models.Todo(task=task, todo_date=target, user_id=user_id)
+        db.add(todo)
+        db.commit()
+        db.refresh(todo)
+        todo_id = todo.id
+        db.expunge(todo)
+    events.broadcast(user_id, {"type": "todos-changed", "action": "created", "id": todo_id})
+    return todo
+
+
 def add_todo(
     user_id: int,
     task: str,
@@ -186,8 +216,7 @@ def add_todo(
             return f"Error: bad todo_date '{todo_date}' — use YYYY-MM-DD."
     else:
         target = date.today()
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         todo = models.Todo(task=task, todo_date=target, user_id=user_id)
         db.add(todo)
         db.commit()
@@ -196,8 +225,6 @@ def add_todo(
             user_id, {"type": "todos-changed", "action": "created", "id": todo.id}
         )
         return f"Successfully added todo #{todo.id}: '{todo.task}' for {todo.todo_date}"
-    finally:
-        db.close()
 
 
 def update_todo(
@@ -213,13 +240,8 @@ def update_todo(
             new_date = date.fromisoformat(todo_date)
         except ValueError:
             return f"Error: bad todo_date '{todo_date}' — use YYYY-MM-DD."
-    db = SessionLocal()
-    try:
-        todo = (
-            db.query(models.Todo)
-            .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
-            .first()
-        )
+    with SessionLocal() as db:
+        todo = _get_owned_todo(db, user_id, todo_id)
         if not todo:
             return "Error: Todo not found."
         if task is not None:
@@ -235,34 +257,20 @@ def update_todo(
             user_id, {"type": "todos-changed", "action": "updated", "id": todo.id}
         )
         return f"Updated Task #{todo.id}: • {mark} {todo.task} (ID: {todo.id}, {todo.todo_date})"
-    finally:
-        db.close()
 
 
-def get_todo(user_id: int, todo_id: int):
+def get_todo(user_id: int, todo_id: int) -> models.Todo | None:
     """Fetch one user-scoped todo row (detached from the session)."""
-    db = SessionLocal()
-    try:
-        todo = (
-            db.query(models.Todo)
-            .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
-            .first()
-        )
+    with SessionLocal() as db:
+        todo = _get_owned_todo(db, user_id, todo_id)
         if todo is not None:
             db.expunge(todo)
         return todo
-    finally:
-        db.close()
 
 
 def archive_todo(user_id: int, todo_id: int) -> str:
-    db = SessionLocal()
-    try:
-        todo = (
-            db.query(models.Todo)
-            .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
-            .first()
-        )
+    with SessionLocal() as db:
+        todo = _get_owned_todo(db, user_id, todo_id)
         if not todo:
             return "Error: Todo not found."
         todo.archived = True
@@ -272,19 +280,12 @@ def archive_todo(user_id: int, todo_id: int) -> str:
             user_id, {"type": "todos-changed", "action": "archived", "id": todo.id}
         )
         return f"Archived Task #{todo.id} '{todo.task}'. It will no longer show up in listings."
-    finally:
-        db.close()
 
 
 def delete_todo(user_id: int, todo_id: int) -> str:
     """Hard-delete one user-scoped todo. Unlike archive_todo the row is gone."""
-    db = SessionLocal()
-    try:
-        todo = (
-            db.query(models.Todo)
-            .filter(models.Todo.id == todo_id, models.Todo.user_id == user_id)
-            .first()
-        )
+    with SessionLocal() as db:
+        todo = _get_owned_todo(db, user_id, todo_id)
         if not todo:
             return "Error: Todo not found."
         label = todo.task
@@ -294,5 +295,3 @@ def delete_todo(user_id: int, todo_id: int) -> str:
             user_id, {"type": "todos-changed", "action": "deleted", "id": todo_id}
         )
         return f"Deleted Task #{todo_id} '{label}'. It is permanently gone."
-    finally:
-        db.close()

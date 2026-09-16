@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
     UNAUTHORIZED_EVENT,
+    authHeader as apiAuthHeader,
     clearSession,
     fetchMe,
     getToken,
@@ -25,6 +26,24 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+async function establishSession(
+    token: string,
+    name: string,
+    setToken: (token: string) => void,
+    setUser: (user: UserProfile | null) => void,
+): Promise<void> {
+    setSession(token, name);
+    setToken(token);
+    // Populate the profile right away so callers don't wait for the effect.
+    // If it fails the validation effect will clean up.
+    try {
+        const profile = await fetchMe();
+        setUser(profile);
+    } catch {
+        // Let the token effect handle session cleanup on real failures.
+    }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [token, setToken] = useState<string | null>(() => getToken());
@@ -80,36 +99,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const login = useCallback(async (name: string, password: string) => {
         const data = await loginUser(name, password);
-        setSession(data.access_token, name);
-        setToken(data.access_token);
-        // Populate the profile right away so callers don't wait for the effect.
-        // If it fails the validation effect above will clean up.
-        try {
-            const profile = await fetchMe();
-            setUser(profile);
-        } catch {
-            // Let the token effect handle session cleanup on real failures.
-        }
+        await establishSession(data.access_token, name, setToken, setUser);
     }, []);
 
     const register = useCallback(async (name: string, password: string) => {
         await registerUser(name, password);
         // Backend register returns only a message, so log in right after.
         const data = await loginUser(name, password);
-        setSession(data.access_token, name);
-        setToken(data.access_token);
-        try {
-            const profile = await fetchMe();
-            setUser(profile);
-        } catch {
-            // Let the token effect handle session cleanup on real failures.
-        }
+        await establishSession(data.access_token, name, setToken, setUser);
     }, []);
 
-    const authHeader = useCallback((): Record<string, string> => {
-        const t = getToken();
-        return t ? { Authorization: `Bearer ${t}` } : {};
-    }, []);
+    const authHeader = useCallback((): Record<string, string> => apiAuthHeader(), []);
 
     const value = useMemo<AuthContextValue>(
         () => ({

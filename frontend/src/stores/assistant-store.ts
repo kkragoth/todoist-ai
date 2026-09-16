@@ -11,6 +11,23 @@ export enum MessageRole {
     Assistant = "assistant",
 }
 
+export enum AssistantStatus {
+    Ready = "Ready.",
+    Thinking = "Thinking…",
+    Waiting = "Waiting for your answer…",
+    Failed = "Turn failed.",
+    Cancelled = "Turn cancelled.",
+    Empty = "(no reply — empty turn)",
+}
+
+export function runningStatus(tool: string): string {
+    return `Running ${tool}…`;
+}
+
+export function turnFailedStatus(message: string): string {
+    return `That turn failed (${message}). Try rephrasing.`;
+}
+
 export interface AssistantToolCall {
     tool: string;
     args: Record<string, unknown>;
@@ -92,7 +109,7 @@ export const useAssistantStore = create<AssistantState>()((set) => ({
         },
     ],
     busy: false,
-    status: "Ready.",
+    status: AssistantStatus.Ready,
     threadId: loadThreadId(),
     pushUser: (text) =>
         set((s) => ({

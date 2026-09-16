@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Archive } from "lucide-react";
-import { fetchTodos, patchTodo } from "@/lib/api";
 import { TodoView, isListView, viewLabel } from "@/lib/todos-view";
+import { archiveCompletedTodos } from "@/lib/cleanup-room";
 import { useTodosUiStore } from "@/stores/todos-ui-store";
 
 /**
@@ -24,9 +24,7 @@ export function CleanupRoomButton() {
         setPending(true);
         setError(null);
         try {
-            const done = await fetchTodos({ completed: true });
-            const open = done.filter((todo) => !todo.archived);
-            await Promise.all(open.map((todo) => patchTodo(todo.id, { archived: true })));
+            await archiveCompletedTodos();
             setView(nextView);
             await queryClient.invalidateQueries({ queryKey: ["todos"] });
         } catch (e) {

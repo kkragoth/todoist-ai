@@ -6,9 +6,26 @@ calls in-process.
 
 from fastmcp.dependencies import CurrentHeaders
 
+from auth.models import User
 from mcp_server.server import mcp
 from mcp_server.utils import resolve_user
 from todo import service as todo_service
+
+
+def _user_or_text_error(headers: dict | None) -> tuple[User | None, str | None]:
+    """Resolve the user, or return an agent-visible error string."""
+    try:
+        return resolve_user(headers), None
+    except ValueError as exc:
+        return None, f"Error: {exc}"
+
+
+def _user_or_json_error(headers: dict | None) -> tuple[User | None, dict | None]:
+    """Resolve the user, or return an agent-visible error payload."""
+    try:
+        return resolve_user(headers), None
+    except ValueError as exc:
+        return None, {"error": str(exc), "open": 0, "done": 0, "todos": []}
 
 
 @mcp.tool()
@@ -31,10 +48,10 @@ def list_todos(
         target_date: One day as YYYY-MM-DD (e.g. today). Omit for all dates.
         overdue: True = only past-due open tasks.
     """
-    try:
-        user = resolve_user(headers)
-    except ValueError as e:
-        return f"Error: {e}"
+    user, error = _user_or_text_error(headers)
+    if error is not None:
+        return error
+    assert user is not None
     return todo_service.list_todos(
         user.id,
         completed=completed,
@@ -70,10 +87,10 @@ def list_todos_structured(
         target_date: One day as YYYY-MM-DD (e.g. today). Omit for all dates.
         overdue: True = only past-due open tasks.
     """
-    try:
-        user = resolve_user(headers)
-    except ValueError as e:
-        return {"error": str(e), "open": 0, "done": 0, "todos": []}
+    user, error = _user_or_json_error(headers)
+    if error is not None:
+        return error
+    assert user is not None
     try:
         todos = todo_service.query_todos(
             user.id,
@@ -83,8 +100,8 @@ def list_todos_structured(
             target_date=target_date,
             overdue=overdue,
         )
-    except ValueError as e:
-        return {"error": str(e), "open": 0, "done": 0, "todos": []}
+    except ValueError as exc:
+        return {"error": str(exc), "open": 0, "done": 0, "todos": []}
     return todo_service.to_todo_list_out(todos).model_dump(mode="json")
 
 
@@ -100,10 +117,10 @@ def add_todo(
         task: Task description.
         todo_date: Target date in YYYY-MM-DD format. Defaults to today if omitted.
     """
-    try:
-        user = resolve_user(headers)
-    except ValueError as e:
-        return f"Error: {e}"
+    user, error = _user_or_text_error(headers)
+    if error is not None:
+        return error
+    assert user is not None
     return todo_service.add_todo(user.id, task=task, todo_date=todo_date)
 
 
@@ -128,10 +145,10 @@ def update_todo(
         todo_date: New target date in YYYY-MM-DD format (omit to keep).
         completed: True = mark done, False = mark open (omit to keep).
     """
-    try:
-        user = resolve_user(headers)
-    except ValueError as e:
-        return f"Error: {e}"
+    user, error = _user_or_text_error(headers)
+    if error is not None:
+        return error
+    assert user is not None
     return todo_service.update_todo(
         user.id,
         todo_id=todo_id,
@@ -154,10 +171,10 @@ def archive_todo(
     Args:
         todo_id: The ID of the task to archive.
     """
-    try:
-        user = resolve_user(headers)
-    except ValueError as e:
-        return f"Error: {e}"
+    user, error = _user_or_text_error(headers)
+    if error is not None:
+        return error
+    assert user is not None
     return todo_service.archive_todo(user.id, todo_id=todo_id)
 
 
@@ -173,8 +190,8 @@ def delete_todo(
     Args:
         todo_id: The ID of the task to delete.
     """
-    try:
-        user = resolve_user(headers)
-    except ValueError as e:
-        return f"Error: {e}"
+    user, error = _user_or_text_error(headers)
+    if error is not None:
+        return error
+    assert user is not None
     return todo_service.delete_todo(user.id, todo_id=todo_id)

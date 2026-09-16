@@ -7,65 +7,58 @@ Active provider/model resolution order:
 Supported providers: "ollama" | "llamacpp" | "openrouter".
 Only the active provider's credentials are required — e.g. an ollama-only
 deploy needs no OPENROUTER_API_KEY.
+
+This module is a thin facade over `core.settings.get_settings()`; the
+names below stay the single import site for tunables. Shared caps
+(`MAX_SUGGESTIONS`, `MAX_SUGGESTION_CHARS`, `UI_DATA_MAX_ROWS`,
+`HIGHLIGHT_MAX_IDS`) live in `protocol.py` — import them from there.
 """
 
-import os
+from core.settings import LlmProvider, get_settings
 
-from dotenv import load_dotenv
+_settings = get_settings()
 
-load_dotenv()
-
-VALID_PROVIDERS = ("ollama", "llamacpp", "openrouter")
+VALID_PROVIDERS = tuple(p.value for p in LlmProvider)
 
 # Which provider/model to use when the client doesn't specify one.
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()
+LLM_PROVIDER = _settings.llm_provider
 
 # Ollama (default). OLLAMA_MODEL is the only knob to trial a bigger brain.
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:31b-cloud")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = _settings.ollama_model
+OLLAMA_BASE_URL = _settings.ollama_base_url
 
 # llama.cpp server (OpenAI-compatible /v1). Model name is whatever was
 # served with `llama serve -m <file.gguf>`; the server mostly ignores it
 # but the client still has to send something.
-LLAMACPP_URL = os.getenv("LLAMACPP_URL", "http://localhost:8080/v1")
-LLAMACPP_MODEL = os.getenv("LLAMACPP_MODEL", "local-model")
-LLAMACPP_API_KEY = os.getenv("LLAMACPP_API_KEY", "sk-no-key")
+LLAMACPP_URL = _settings.llamacpp_url
+LLAMACPP_MODEL = _settings.llamacpp_model
+LLAMACPP_API_KEY = _settings.llamacpp_api_key
 
 # OpenRouter (OpenAI-compatible). Paid inference: gated behind
 # OPENROUTER_ENABLED (fail-closed default) AND OPENROUTER_API_KEY.
-OPENROUTER_ENABLED = os.getenv("OPENROUTER_ENABLED", "false").lower() in (
-    "1",
-    "true",
-    "yes",
-)
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemma-3-27b-it")
-OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_ENABLED = _settings.openrouter_enabled
+OPENROUTER_API_KEY = _settings.openrouter_api_key
+OPENROUTER_MODEL = _settings.openrouter_model
+OPENROUTER_BASE_URL = _settings.openrouter_base_url
 # Optional attribution headers OpenRouter recommends (pass-through only).
-OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "")
-OPENROUTER_APP_NAME = os.getenv("OPENROUTER_APP_NAME", "todoist-ai")
+OPENROUTER_SITE_URL = _settings.openrouter_site_url
+OPENROUTER_APP_NAME = _settings.openrouter_app_name
 
 # Loop guards.
-RECURSION_LIMIT = int(os.getenv("CHAT_RECURSION_LIMIT", "25"))
-HISTORY_LIMIT = int(os.getenv("CHAT_HISTORY_LIMIT", "30"))
-TURN_TIMEOUT_SECONDS = float(os.getenv("CHAT_TURN_TIMEOUT_SECONDS", "180"))
+RECURSION_LIMIT = _settings.chat_recursion_limit
+HISTORY_LIMIT = _settings.chat_history_limit
+TURN_TIMEOUT_SECONDS = _settings.chat_turn_timeout_seconds
 
 # ask_user caps. Single source of truth for normalize_ask in service.py;
 # AskUserArgs in tools.py mirrors these in its Field constraints.
 MAX_ASK_OPTIONS = 4
 MAX_QUESTION_CHARS = 300
 
-# Suggestion/widget caps live in protocol.py (shared with tools/service);
-# re-exported here so config stays the single import site for tunables.
-from .protocol import MAX_SUGGESTION_CHARS as MAX_SUGGESTION_CHARS
-from .protocol import MAX_SUGGESTIONS as MAX_SUGGESTIONS
-from .protocol import UI_DATA_MAX_ROWS as UI_DATA_MAX_ROWS
-
 
 def default_model_for(provider: str) -> str:
-    if provider == "llamacpp":
+    if provider == LlmProvider.LLAMACPP.value:
         return LLAMACPP_MODEL
-    if provider == "openrouter":
+    if provider == LlmProvider.OPENROUTER.value:
         return OPENROUTER_MODEL
     return OLLAMA_MODEL
 
@@ -74,12 +67,13 @@ def resolve_provider_and_model(
     provider: str | None, model: str | None
 ) -> tuple[str, str]:
     """Resolve effective (provider, model), validating the provider name."""
-    p = (provider or LLM_PROVIDER).lower()
+    effective = provider if provider is not None else LLM_PROVIDER
+    p = effective.lower()
     if p not in VALID_PROVIDERS:
         raise ValueError(
-            f"Unknown provider '{provider}'. Choose one of: {', '.join(VALID_PROVIDERS)}."
+            f"Unknown provider '{effective}'. Choose one of: {', '.join(VALID_PROVIDERS)}."
         )
-    if p == "openrouter" and not OPENROUTER_ENABLED:
+    if p == LlmProvider.OPENROUTER.value and not OPENROUTER_ENABLED:
         raise ValueError(
             "OpenRouter provider is disabled (set OPENROUTER_ENABLED=true to enable)."
         )

@@ -21,7 +21,7 @@ Watch the demo: https://youtu.be/stUHhtTdR_E
 | `frontend/` | Web client |
 | `agentic-cli/` | Earlier agentic CLI prototype |
 | `scripts/` | Helper script: register a user (bash + PowerShell) |
-| `mcp_config/` | Ready-made MCP client config (`opencode.json`) |
+| `mcp_config/` | Ready-made MCP client configs (`opencode.json`, `claude-mcp.json`, `codex.toml`) |
 
 ## Connect to MCP
 
@@ -96,7 +96,46 @@ Notes:
   `backend/.env` to the reachable root URL so OAuth discovery advertises
   working authorize/token URLs.
 
-### 3b. Use it from the CLI (`--mcp-direct`)
+### 3b. Use it from Claude Code (OAuth)
+
+`mcp_config/claude-mcp.json` is a drop-in project config:
+
+```bash
+cp mcp_config/claude-mcp.json ./.mcp.json
+# or: claude mcp add --transport http todoist-ai http://localhost:8000/mcp/
+```
+
+Claude Code discovers OAuth from
+`/.well-known/oauth-protected-resource` and opens the browser login for
+the account from step 2 — no tokens to paste. Then prompt with e.g.
+`list my todos use todoist-ai`.
+
+### 3c. Use it from Codex (OAuth)
+
+Append `mcp_config/codex.toml` to your Codex config (`~/.codex/config.toml`,
+or `.codex/config.toml` for a project-scoped server):
+
+```bash
+cat mcp_config/codex.toml >> ~/.codex/config.toml
+# or: codex mcp add todoist-ai --url http://localhost:8000/mcp/
+```
+
+Then authenticate once — a browser login page for the account from step 2
+opens, no tokens to paste:
+
+```bash
+codex mcp login todoist-ai
+```
+
+Tokens are stored by Codex (system keyring, encrypted file fallback) and
+refreshed automatically. Useful extras:
+
+```bash
+codex mcp list            # auth status of all servers
+codex mcp logout todoist-ai # drop stored credentials
+```
+
+### 3d. Use it from the CLI (`--mcp-direct`)
 
 ```bash
 cd cli && npm install && npm run build
@@ -114,8 +153,8 @@ Plain text lists via MCP while the mode is on (`MCP-DIRECT` badge in the header)
 - MCP clients use OAuth 2.1: dynamic client registration, PKCE,
   login/consent at `GET /oauth/login`, refresh + revocation, and discovery
   at `/.well-known/oauth-authorization-server` and
-  `/.well-known/oauth-protected-resource/mcp` — so `opencode mcp auth`
-  works with no manual token handling.
+  `/.well-known/oauth-protected-resource/mcp` — so `opencode mcp auth`,
+  Claude Code, and `codex mcp login` all work with no manual token handling.
 - REST (`/api/todos`, `/api/chat`), the CLI, and direct API/MCP use accept
   `Authorization: Bearer` JWTs from `POST /auth/token` (OAuth access tokens
   are the same JWT format). Manual token for curl/testing:

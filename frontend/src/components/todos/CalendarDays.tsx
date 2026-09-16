@@ -1,4 +1,5 @@
 import { CalendarDay } from "@/components/todos/CalendarDay";
+import { WeekdayHeader } from "@/components/todos/WeekdayHeader";
 import { WEEKDAY_HEADERS } from "@/lib/dates";
 
 export function CalendarDays({
@@ -16,7 +17,7 @@ export function CalendarDays({
         <div>
             <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium text-muted-foreground/70">
                 {WEEKDAY_HEADERS.map((day) => (
-                    <span key={day}>{day}</span>
+                    <WeekdayHeader key={day} day={day} />
                 ))}
             </div>
             <div className="grid grid-cols-7 gap-0.5">

@@ -1,4 +1,5 @@
 import type { TodosQuery } from "@/lib/api";
+import { addDaysISO } from "@/lib/dates";
 
 export enum TodoStatus {
     All = "all",
@@ -214,9 +215,7 @@ export function todayISO(): string {
 }
 
 function shiftISO(iso: string, days: number): string {
-    const d = new Date(`${iso}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + days);
-    return toISODate(d);
+    return addDaysISO(iso, days);
 }
 
 export interface ResolvedDateRange {
@@ -299,4 +298,9 @@ export function stripDatesUnlessCustom(search: TodosSearchParams): TodosSearchPa
             delete next.end_date;
             return next;
     }
+}
+
+/** Canonical `/todos` landing search — used for post-login redirects. */
+export function todosHomeSearch(): TodosSearchParams {
+    return stripDatesUnlessCustom(DEFAULT_SEARCH);
 }

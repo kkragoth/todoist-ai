@@ -22,6 +22,12 @@ export function getUsername(): string | null {
     return localStorage.getItem(USERNAME_KEY);
 }
 
+/** Raw token for chat/SSE requests (`Authorization: Bearer <token>`). */
+export function authHeader(): Record<string, string> {
+    const token = getToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export function setSession(token: string, username: string) {
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USERNAME_KEY, username);

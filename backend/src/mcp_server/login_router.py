@@ -110,11 +110,10 @@ async def login_submit(
     if pending is None:
         return _expired_page()
 
-    db = SessionLocal()
-    try:
+    with SessionLocal() as db:
         user = db.query(User).filter(User.username == username).first()
-    finally:
-        db.close()
+        if user is not None:
+            db.expunge(user)
 
     params = pending["params"]
     if user is None or not verify_password(password, user.hashed_password):

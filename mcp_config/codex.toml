@@ -1,0 +1,6 @@
+# Drop-in snippet for Codex CLI (~/.codex/config.toml, or .codex/config.toml
+# for a project-scoped server). OAuth is discovered automatically —
+# then run `codex mcp login todoist-ai` and log in with your todoist-ai
+# account in the browser.
+[mcp_servers.todoist-ai]
+url = "http://localhost:8000/mcp/"

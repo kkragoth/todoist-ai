@@ -197,16 +197,5 @@ export function defaultCollapsedBuckets(): CollapsedBuckets {
 }
 
 export function isBucketCollapsed(collapsed: CollapsedBuckets, bucket: TodoBucket): boolean {
-    switch (bucket) {
-        case TodoBucket.Overdue:
-            return collapsed[TodoBucket.Overdue];
-        case TodoBucket.Today:
-            return collapsed[TodoBucket.Today];
-        case TodoBucket.Tomorrow:
-            return collapsed[TodoBucket.Tomorrow];
-        case TodoBucket.ThisWeek:
-            return collapsed[TodoBucket.ThisWeek];
-        case TodoBucket.Later:
-            return collapsed[TodoBucket.Later];
-    }
+    return collapsed[bucket];
 }

@@ -21,7 +21,7 @@ function RootLayout() {
 
     return (
         <div className="flex h-svh flex-col overflow-hidden bg-background text-foreground">
-            <header className="z-20 h-12 shrink-0 border-b border-border/60 bg-white dark:bg-background">
+            <header className="z-20 h-12 shrink-0 border-b border-border/60 bg-white dark:bg-card">
                 <div className="flex h-12 w-full items-center justify-between px-3">
                     <div className="flex items-center gap-3">
                         <Link to="/" className="text-[13px] font-semibold tracking-tight">

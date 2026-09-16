@@ -3,7 +3,9 @@ import { todayISO } from "@/lib/todos-filters";
 import { TodoBucket } from "@/lib/todo-buckets";
 import { Density, ListSort, TodoView, defaultCollapsedBuckets, type CollapsedBuckets } from "@/lib/todos-view";
 
-/** Transient todos UI state. Shareable filter state lives in the URL. */
+/** Transient todos UI state. Shareable filter state lives in the URL.
+ * `searchText` stays local on purpose: fuzzy text is keystroke-transient
+ * and never shareable, unlike status/date_preset in the URL. */
 interface TodosUiState {
     newTask: string;
     newDate: string;
@@ -11,7 +13,6 @@ interface TodosUiState {
     searchText: string;
     assistantOpen: boolean;
     isAddOpen: boolean;
-    doneExpanded: boolean;
     view: TodoView;
     listSort: ListSort;
     density: Density;
@@ -28,7 +29,6 @@ interface TodosUiState {
     setAddOpen: (open: boolean) => void;
     openAddModal: () => void;
     closeAddModal: () => void;
-    setDoneExpanded: (expanded: boolean) => void;
     setView: (view: TodoView) => void;
     setListSort: (sort: ListSort) => void;
     setDensity: (density: Density) => void;
@@ -50,7 +50,6 @@ export const useTodosUiStore = create<TodosUiState>()((set) => ({
     searchText: "",
     assistantOpen: false,
     isAddOpen: false,
-    doneExpanded: false,
     view: TodoView.Grouped,
     listSort: ListSort.Asc,
     density: Density.Comfortable,
@@ -65,7 +64,6 @@ export const useTodosUiStore = create<TodosUiState>()((set) => ({
     setAddOpen: (isAddOpen) => set({ isAddOpen }),
     openAddModal: () => set({ isAddOpen: true }),
     closeAddModal: () => set({ isAddOpen: false }),
-    setDoneExpanded: (doneExpanded) => set({ doneExpanded }),
     setView: (view) => set({ view }),
     setListSort: (listSort) => set({ listSort }),
     setDensity: (density) => set({ density }),
@@ -88,3 +86,18 @@ export const useTodosUiStore = create<TodosUiState>()((set) => ({
     unmarkCompleting: (id) => set((s) => ({ completingIds: s.completingIds.filter((x) => x !== id) })),
     resetForm: () => set({ newTask: "", formError: null, newDate: todayISO() }),
 }));
+
+/** Per-row flash subscription — only re-renders when this id's state flips. */
+export function useIsFlashingTodo(id: number): boolean {
+    return useTodosUiStore((s) => s.flashIds.includes(id));
+}
+
+/** Per-row completing subscription — only re-renders when this id's state flips. */
+export function useIsCompletingTodo(id: number): boolean {
+    return useTodosUiStore((s) => s.completingIds.includes(id));
+}
+
+/** Single collapsed flag — only re-renders when this bucket flips. */
+export function useBucketCollapsed(bucket: TodoBucket): boolean {
+    return useTodosUiStore((s) => s.collapsedBuckets[bucket]);
+}
