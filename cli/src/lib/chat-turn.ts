@@ -1,5 +1,6 @@
 import { openChatTurn } from "@/api.js";
 import { ConnectionStatus } from "@/lib/connection.js";
+import { resolveSessionToken } from "@/lib/oauth-provider.js";
 import {
     appendAnswer,
     cancelTurn,
@@ -21,7 +22,9 @@ let abortController: AbortController | null = null;
 export async function startTurn(userText: string): Promise<void> {
     const session = useSessionStore.getState();
     const chat = useChatStore.getState();
-    const activeToken = session.token;
+    // OAuth access tokens expire: refresh transparently when possible.
+    const activeToken = await resolveSessionToken(session.apiUrl, session.token);
+    if (activeToken && activeToken !== session.token) session.setToken(activeToken);
     if (!activeToken) return;
     const turn = createTurn(userText);
     const id = turn.id;

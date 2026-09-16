@@ -1,12 +1,15 @@
 import { create } from "zustand";
 import { apiHealth, apiLogin, apiMe, apiRegister, BOOT_TIMEOUT_MS } from "@/api.js";
 import { ConnectionStatus } from "@/lib/connection.js";
+import { loginWithOAuth, resolveSessionToken } from "@/lib/oauth-provider.js";
 import { useChatStore } from "@/stores/chat-store.js";
 import { useSessionStore } from "@/stores/session-store.js";
 import { AuthFocus, AuthMode } from "@/types.js";
 
 /** Sign-in form state + boot token validation. Called once from main.tsx;
- * any component (AuthScreen, slash logout) reads/writes it directly. */
+ * any component (AuthScreen, slash logout) reads/writes it directly.
+ * Browser OAuth is the primary login; username/password stays available
+ * behind --allow-password-login. */
 interface AuthState {
     mode: AuthMode;
     focus: AuthFocus;
@@ -14,12 +17,15 @@ interface AuthState {
     pass: string;
     error: string;
     busy: boolean;
+    /** Authorize URL of the in-flight OAuth flow (manual fallback). */
+    oauthUrl: string;
     setMode: (mode: AuthMode) => void;
     setFocus: (focus: AuthFocus) => void;
     setUser: (user: string) => void;
     setPass: (pass: string) => void;
     setError: (error: string) => void;
     doAuth: () => Promise<void>;
+    doOAuth: () => Promise<void>;
     reset: () => void;
     boot: () => void;
     retryBoot: () => void;
@@ -28,12 +34,13 @@ interface AuthState {
 let bootStarted = false;
 
 export const useAuthStore = create<AuthState>()((set, get) => ({
-    mode: AuthMode.Login,
-    focus: AuthFocus.User,
+    mode: AuthMode.OAuth,
+    focus: AuthFocus.Tabs,
     user: "",
     pass: "",
     error: "",
     busy: false,
+    oauthUrl: "",
     setMode: (mode) => set({ mode }),
     setFocus: (focus) => set({ focus }),
     setUser: (user) => set({ user }),
@@ -71,7 +78,38 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
             set({ busy: false });
         }
     },
-    reset: () => set({ mode: AuthMode.Login, focus: AuthFocus.User, pass: "", error: "" }),
+    doOAuth: async () => {
+        if (get().busy) return;
+        const session = useSessionStore.getState();
+        session.setConnection(ConnectionStatus.Connecting);
+        set({ busy: true, error: "", oauthUrl: "" });
+        try {
+            const tokens = await loginWithOAuth(session.apiUrl, (url) => set({ oauthUrl: url }));
+            const me = await apiMe(session.apiUrl, tokens.access_token, BOOT_TIMEOUT_MS);
+            if (me.status !== "ok") {
+                throw new Error(
+                    me.status === "unreachable"
+                        ? `backend unreachable at ${session.apiUrl} — is the server running?`
+                        : "browser login succeeded but the token was rejected — retry.",
+                );
+            }
+            session.setConnection(ConnectionStatus.Connected);
+            session.signIn(tokens.access_token, me.username);
+            useChatStore.getState().pushSystem(`Signed in as ${me.username}. Type /help for commands.`);
+            set({ oauthUrl: "" });
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            if (message.includes("unreachable") || message.includes("timed out") || message.includes("fetch")) {
+                session.setConnection(ConnectionStatus.Disconnected);
+            } else {
+                session.setConnection(ConnectionStatus.Connected);
+            }
+            set({ error: message });
+        } finally {
+            set({ busy: false });
+        }
+    },
+    reset: () => set({ mode: AuthMode.OAuth, focus: AuthFocus.Tabs, pass: "", error: "", oauthUrl: "" }),
     retryBoot: () => {
         bootStarted = false;
         get().boot();
@@ -88,7 +126,11 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
                 session.setConnection(reachable ? ConnectionStatus.Connected : ConnectionStatus.Disconnected);
                 return;
             }
-            const me = await apiMe(session.apiUrl, session.token, BOOT_TIMEOUT_MS);
+            // OAuth access tokens expire: refresh transparently when the
+            // oauth store holds a refresh token, else validate as-is.
+            const fresh = await resolveSessionToken(session.apiUrl, session.token);
+            if (fresh && fresh !== session.token) session.setToken(fresh);
+            const me = await apiMe(session.apiUrl, fresh ?? session.token, BOOT_TIMEOUT_MS);
             if (me.status === "ok") {
                 session.setConnection(ConnectionStatus.Connected);
                 session.setUsername(me.username);

@@ -142,8 +142,11 @@ cd cli && npm install && npm run build
 todoist-ai --mcp-direct   # or TODO_MCP_DIRECT=1
 ```
 
-Direct mode talks MCP straight from the CLI, bypassing the LLM
-(it logs in with your account itself, same as the OAuth browser flow):
+Sign-in is browser OAuth (same flow as opencode above — no tokens to
+paste); `--allow-password-login` (or `TODO_ALLOW_PASSWORD_LOGIN=1`)
+additionally shows username/password tabs for headless use.
+
+Direct mode talks MCP straight from the CLI, bypassing the LLM:
 `/tools`, `/resources`, `/prompts`, `/list [query]`, `/read <id>`,
 `/add <task>`, `/done`, `/reopen`, `/archive`, `/delete`, `/mcp [on|off]`.
 Plain text lists via MCP while the mode is on (`MCP-DIRECT` badge in the header).
